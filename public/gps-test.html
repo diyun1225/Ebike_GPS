@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPS 測試</title>
+  <style>
+    body {
+      font-family: -apple-system, "PingFang TC", sans-serif;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 24px;
+      background: #f7f8fa;
+    }
+    h1 { font-size: 22px; }
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+      background: #4285f4;
+      border: none;
+      border-radius: 8px;
+      margin: 8px 0;
+    }
+    button.gray { background: #888; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 15px;
+    }
+    .row b { color: #1a73e8; }
+    #card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+    #msg { font-size: 14px; color: #d93025; min-height: 20px; margin-top: 10px; }
+    a { display: inline-block; margin-top: 16px; color: #1a73e8; }
+    .ok { color: #188038 !important; }
+  </style>
+</head>
+<body>
+  <h1>📍 GPS 測試</h1>
+  <p style="font-size:14px;color:#555">按下按鈕，瀏覽器會問你是否允許定位，按「允許」就會顯示座標。</p>
+
+  <button id="once">取得一次目前位置</button>
+  <button id="watch" class="gray">開始持續追蹤</button>
+
+  <div id="card">
+    <div class="row"><span>緯度 lat</span><b id="lat">—</b></div>
+    <div class="row"><span>經度 lng</span><b id="lng">—</b></div>
+    <div class="row"><span>精度</span><b id="acc">—</b></div>
+    <div class="row"><span>海拔(若有)</span><b id="alt">—</b></div>
+    <div class="row"><span>更新次數</span><b id="count">0</b></div>
+  </div>
+
+  <div id="msg"></div>
+  <a id="maplink" href="#" target="_blank" style="display:none">在 Google Maps 開啟這個位置 →</a>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let watchId = null;
+    let count = 0;
+
+    function show(pos) {
+      count++;
+      const c = pos.coords;
+      $("lat").textContent = c.latitude.toFixed(6);
+      $("lng").textContent = c.longitude.toFixed(6);
+      $("acc").textContent = c.accuracy ? c.accuracy.toFixed(0) + " m" : "—";
+      $("alt").textContent = c.altitude != null ? c.altitude.toFixed(0) + " m" : "無";
+      $("count").textContent = count;
+      $("msg").textContent = "✅ 成功取得位置！";
+      $("msg").className = "ok";
+      const link = $("maplink");
+      link.href = `https://www.google.com/maps?q=${c.latitude},${c.longitude}`;
+      link.style.display = "inline-block";
+    }
+
+    function fail(err) {
+      const map = {
+        1: "你拒絕了定位權限（或網站不是 HTTPS）",
+        2: "拿不到位置（室內訊號弱？）",
+        3: "逾時，再試一次",
+      };
+      $("msg").className = "";
+      $("msg").textContent = "❌ " + (map[err.code] || err.message);
+    }
+
+    if (!("geolocation" in navigator)) {
+      $("msg").textContent = "❌ 這個瀏覽器不支援定位";
+    }
+
+    $("once").onclick = () => {
+      $("msg").textContent = "定位中…";
+      $("msg").className = "";
+      navigator.geolocation.getCurrentPosition(show, fail, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      });
+    };
+
+    $("watch").onclick = () => {
+      if (watchId === null) {
+        watchId = navigator.geolocation.watchPosition(show, fail, {
+          enableHighAccuracy: true,
+        });
+        $("watch").textContent = "停止追蹤";
+        $("watch").classList.remove("gray");
+        $("msg").textContent = "追蹤中…走動看看數字會不會變";
+        $("msg").className = "";
+      } else {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        $("watch").textContent = "開始持續追蹤";
+        $("watch").classList.add("gray");
+      }
+    };
+  </script>
+</body>
+</html>

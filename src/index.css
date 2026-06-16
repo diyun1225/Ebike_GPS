@@ -1,0 +1,697 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+  color: #1a1a1a;
+  background: #e9ebee; /* 電腦上手機框外的底色 */
+}
+
+/* 整個 App 固定成一支手機寬度，置中；地圖鋪滿，其他元素浮在上面 */
+.dash {
+  position: relative;
+  height: 100vh;
+  max-width: 430px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.12);
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+}
+
+/* ===== 浮在地圖頂端的即時數據條 ===== */
+.tbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 600;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(20, 22, 30, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 14px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+}
+
+.pill .pi {
+  font-size: 13px;
+}
+
+.pill b {
+  font-weight: 800;
+}
+
+.pill small {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.75;
+  margin-left: 1px;
+}
+
+/* ===== 浮在地圖上的搜尋卡 ===== */
+.search {
+  position: absolute;
+  top: 58px;
+  left: 12px;
+  right: 12px;
+  z-index: 600;
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+
+.search input {
+  width: 100%;
+  padding: 11px 12px;
+  font-size: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  background: #f6f7f9;
+  margin-bottom: 8px;
+}
+
+/* 多站輸入列 */
+.stop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.stop-row .stop-dot {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.stop-row input {
+  flex: 1;
+  margin-bottom: 0;
+}
+.stop-del {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: #f0f1f3;
+  color: #888;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
+.add-stop {
+  width: 100%;
+  background: #eef3ff;
+  color: #1a73e8;
+  border: none;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  margin: 2px 0 10px;
+}
+.search .oneline .mid {
+  color: #888;
+  font-size: 13px;
+}
+
+.search input:focus {
+  outline: none;
+  border-color: #4285f4;
+  background: #fff;
+}
+
+.search .wrow {
+  display: flex;
+  gap: 8px;
+}
+
+.search .wrow input {
+  flex: 1;
+}
+
+.search .plan-btn {
+  width: 100%;
+  padding: 12px;
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: #4285f4;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.search .plan-btn:disabled {
+  background: #9bb6e8;
+}
+
+.s-status {
+  font-size: 13px;
+  margin-top: 8px;
+  text-align: center;
+}
+.s-status.err {
+  color: #d93025;
+}
+.s-status.ok {
+  color: #188038;
+}
+
+/* 收合後的一行：起點 → 終點 */
+.search.collapsed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px;
+  cursor: pointer;
+}
+
+.search .oneline {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.search .oneline b {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search .oneline .arrow {
+  color: #999;
+}
+.search .edit {
+  color: #4285f4;
+  font-size: 18px;
+}
+
+/* ===== 底部路線資訊卡 ===== */
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 600;
+  max-height: 48%;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  padding: 8px 16px 18px;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: #d0d3d8;
+  margin: 4px auto 12px;
+}
+
+.sheet-stats {
+  display: flex;
+  justify-content: space-between;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.sheet-stats div {
+  flex: 1;
+}
+
+.sheet-stats b {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+  color: #1a1f2b;
+}
+
+.sheet-stats span {
+  font-size: 11px;
+  color: #888;
+}
+
+h1 {
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
+.field {
+  margin-bottom: 12px;
+  flex: 1;
+}
+
+.field-row {
+  display: flex;
+  gap: 10px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #555;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 11px 12px;
+  font-size: 16px; /* 16px 可避免 iOS 點輸入框自動放大 */
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: #4285f4;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  margin: 4px 0 12px;
+  cursor: pointer;
+}
+
+.checkbox input {
+  width: auto;
+}
+
+button {
+  width: 100%;
+  padding: 13px;
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: #4285f4;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+button:hover:not(:disabled) {
+  background: #3367d6;
+}
+
+button:disabled {
+  background: #9bb6e8;
+  cursor: not-allowed;
+}
+
+#status {
+  margin-top: 12px;
+  font-size: 13px;
+  min-height: 16px;
+}
+
+#status.err {
+  color: #d93025;
+}
+
+#status.ok {
+  color: #188038;
+}
+
+#summary {
+  margin-top: 16px;
+  padding: 14px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+#summary .stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+#summary .stat:last-child {
+  margin-bottom: 0;
+}
+
+#summary .stat b {
+  color: #1a73e8;
+}
+
+#segmentList {
+  margin-top: 16px;
+}
+
+.seg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+  border-left: 5px solid #ccc;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.seg:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.seg .num {
+  font-weight: 700;
+  font-size: 13px;
+  color: #888;
+  min-width: 30px;
+}
+
+.seg .info {
+  flex: 1;
+  font-size: 13px;
+}
+
+.seg .info .grade {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.seg .info .detail {
+  color: #777;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* 進入導航時，給規劃結果一個漸層的「進入導航」按鈕 */
+.nav-start {
+  background: linear-gradient(135deg, #1db954, #119a44);
+  margin-top: 14px;
+}
+.nav-start:hover:not(:disabled) {
+  background: linear-gradient(135deg, #17a849, #0e8a3c);
+}
+
+/* ===== 導航模式 ===== */
+.dash.nav .telemetry,
+.dash.nav #sidebar {
+  display: none;
+}
+.dash.nav #app {
+  flex: 1;
+}
+.dash.nav #map {
+  height: 100vh;
+  min-height: 100vh;
+}
+
+.nav-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none; /* 讓地圖可以拖曳，只有卡片/按鈕可點 */
+}
+
+/* 頂部轉彎指示（綠色橫幅） */
+.nav-instruction {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #17554b;
+  color: #fff;
+  padding: 14px 18px;
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.nav-maneuver {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.nav-instr-text {
+  min-width: 0;
+}
+
+.nav-turn-dist {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.nav-turn-road {
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+/* GPS 真實導航切換鈕（右上浮動） */
+.nav-gps {
+  position: absolute;
+  top: 96px;
+  right: 14px;
+  z-index: 1001;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: #1a73e8;
+  font-size: 20px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.nav-gps.on {
+  background: #1a73e8;
+  color: #fff;
+}
+
+/* 底部儀表板（時速表 + 電量 + 輔助） */
+.nav-dash {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 16px;
+  z-index: 1001;
+  background: #fff;
+  border-radius: 20px;
+  padding: 10px 14px 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+}
+
+.dash-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dash-side {
+  text-align: center;
+  min-width: 64px;
+}
+.dash-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.dash-val {
+  font-size: 19px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.dash-lbl {
+  font-size: 11px;
+  color: #888;
+  margin-top: 1px;
+}
+
+.dash-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.dash-extra {
+  display: flex;
+  gap: 12px;
+  margin-top: -6px;
+  font-size: 12px;
+  color: #666;
+}
+.dash-extra span {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* SVG 時速表 */
+.gauge {
+  width: 150px;
+  height: auto;
+  display: block;
+}
+.gauge-bg {
+  fill: none;
+  stroke: #e6e9ed;
+  stroke-width: 13;
+  stroke-linecap: round;
+}
+.gauge-fg {
+  fill: none;
+  stroke: #1a73e8;
+  stroke-width: 13;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+.gauge-needle {
+  stroke: #e53935;
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: transform 0.3s ease;
+}
+.gauge-hub {
+  fill: #333;
+}
+.gauge-num {
+  font-size: 36px;
+  font-weight: 800;
+  fill: #1a1f2b;
+}
+.gauge-unit {
+  font-size: 12px;
+  fill: #888;
+}
+
+.dash-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #eef0f2;
+}
+
+.nav-bottom-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-big {
+  font-size: 22px;
+  font-weight: 800;
+  color: #17554b;
+  line-height: 1.1;
+}
+
+.nav-sub {
+  font-size: 13px;
+  color: #666;
+  margin-top: 2px;
+}
+
+/* 導航底部按鈕：覆寫全域 button 的 width:100% / margin */
+.dash-info button {
+  width: auto;
+  margin: 0;
+}
+
+.nav-bottom-main {
+  flex: 1;
+  min-width: 0;
+}
+.nav-big {
+  white-space: nowrap;
+}
+.nav-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-ride {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.nav-ride.on {
+  background: #5f6368;
+}
+
+.nav-speed {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: #eef1f4;
+  color: #1a1f2b;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.nav-end {
+  flex-shrink: 0;
+  width: auto;
+  border: none;
+  border-radius: 999px;
+  background: #e53935;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  padding: 11px 20px;
+  cursor: pointer;
+}
+
+/* 很窄的手機 (≤ 380px)：數據卡改 3 欄 */
+@media (max-width: 380px) {
+  .telemetry .cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
