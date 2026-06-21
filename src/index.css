@@ -695,3 +695,374 @@ button:disabled {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* ===== 主畫面（選模式） ===== */
+.dash.home {
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #0f2027, #203a43, #2c5364);
+  color: #fff;
+  padding: 0 22px;
+}
+
+.home-head {
+  text-align: center;
+  margin-top: 18vh;
+  margin-bottom: 40px;
+}
+.home-logo {
+  font-size: 56px;
+  line-height: 1;
+}
+.home-title {
+  font-size: 26px;
+  font-weight: 800;
+  margin: 14px 0 4px;
+}
+.home-sub {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.home-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mode-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  padding: 18px 18px;
+  margin: 0;
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 0.15s, transform 0.1s;
+}
+.mode-card:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+.mode-card:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.mode-card:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mode-card-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+.mode-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mode-card-title {
+  font-size: 18px;
+  font-weight: 800;
+}
+.mode-card-desc {
+  font-size: 13px;
+  opacity: 0.72;
+}
+.mode-card-arrow {
+  font-size: 26px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* 各模式左上角的「返回主畫面」鈕 */
+.mode-back {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1200;
+  width: auto;
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1f2b;
+  background: rgba(255, 255, 255, 0.92);
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.mode-back:hover {
+  background: #fff;
+}
+
+/* ===== 模式佔位畫面 ===== */
+.dash.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #2c1338, #4a1c43);
+  color: #fff;
+}
+.placeholder-body {
+  text-align: center;
+}
+.placeholder-icon {
+  font-size: 60px;
+}
+.placeholder-body h2 {
+  font-size: 24px;
+  margin: 14px 0 6px;
+}
+.placeholder-body p {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* ===== 心率模式 ===== */
+.dash.hr {
+  background: linear-gradient(165deg, #16181d, #1f242c);
+  color: #fff;
+  padding: 56px 20px 20px;
+  overflow-y: auto;
+}
+
+/* 基準線設定 */
+.hr-setup {
+  margin-top: 8vh;
+}
+.hr-setup h2 {
+  font-size: 22px;
+  font-weight: 800;
+}
+.hr-setup-sub {
+  font-size: 13px;
+  opacity: 0.6;
+  margin: 4px 0 22px;
+}
+.hr-setup label {
+  color: #cfd4dc;
+  margin-top: 12px;
+}
+.hr-setup input {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.hr-baseline-preview {
+  display: flex;
+  gap: 12px;
+  margin: 22px 0 8px;
+}
+.hr-baseline-preview div {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 14px;
+  text-align: center;
+}
+.hr-baseline-preview b {
+  display: block;
+  font-size: 26px;
+  font-weight: 800;
+  color: #ff5a7a;
+}
+.hr-baseline-preview span {
+  font-size: 12px;
+  opacity: 0.65;
+}
+.hr-start {
+  margin-top: 18px;
+  background: #ff3b5c;
+}
+.hr-start:hover:not(:disabled) {
+  background: #e22f4e;
+}
+
+/* 車錶燈 + 心率 */
+.hr-gauge {
+  position: relative;
+  text-align: center;
+  padding: 18px 0 14px;
+}
+.hr-light {
+  width: 14px;
+  height: 14px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  background: var(--zc);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--zc) 22%, transparent),
+    0 0 22px var(--zc);
+}
+.hr-bpm b {
+  font-size: 72px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--zc);
+}
+.hr-bpm span {
+  font-size: 18px;
+  font-weight: 700;
+  opacity: 0.6;
+  margin-left: 6px;
+}
+.hr-zone-name {
+  font-size: 17px;
+  font-weight: 800;
+  margin-top: 8px;
+  color: var(--zc);
+}
+.hr-zone-target {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+/* 目前狀態 */
+.hr-state {
+  background: color-mix(in srgb, var(--zc) 16%, #1c2129);
+  border: 1px solid color-mix(in srgb, var(--zc) 45%, transparent);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-top: 12px;
+  text-align: center;
+}
+.hr-state-name {
+  font-size: 19px;
+  font-weight: 800;
+}
+.hr-state-note {
+  font-size: 12px;
+  opacity: 0.72;
+  margin-top: 2px;
+}
+
+/* 區間刻度條 */
+.hr-zonebar {
+  margin: 16px 2px 4px;
+}
+.hr-zonebar-track {
+  position: relative;
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.hr-zonebar-track .z {
+  height: 100%;
+}
+.z-low {
+  background: #2f7bff;
+}
+.z-high {
+  background: #1db954;
+}
+.z-max {
+  background: #ff8a1f;
+}
+.hr-zonebar-cursor {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 16px;
+  background: #fff;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  transition: left 0.4s ease;
+}
+.hr-zonebar-lbls {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: 0.5;
+  margin-top: 4px;
+}
+
+/* 呼吸 / 馬達數據 */
+.hr-metrics {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.hr-metric {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 12px 8px;
+  text-align: center;
+}
+.hr-metric-lbl {
+  display: block;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.hr-metric b {
+  font-size: 26px;
+  font-weight: 800;
+}
+.hr-metric b small {
+  font-size: 14px;
+  margin-left: 1px;
+}
+.hr-metric-unit {
+  display: block;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.hr-motorbar {
+  height: 10px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.hr-motorbar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease, background 0.3s ease;
+}
+
+/* 出力情境按鈕 */
+.hr-efforts {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.hr-effort {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 10px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfd4dc;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid transparent;
+  border-radius: 14px;
+}
+.hr-effort:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+.hr-effort.on {
+  background: rgba(255, 59, 92, 0.2);
+  border-color: #ff3b5c;
+  color: #fff;
+}
+.hr-effort-icon {
+  font-size: 20px;
+}
