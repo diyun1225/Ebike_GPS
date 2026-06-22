@@ -1,6 +1,7 @@
 import { fmtDist, gradeColor } from "../slope.js";
 import Speedometer from "./Speedometer.jsx";
 import batteryIcon from "../../../assets/icon-battery.png";
+import assistIcon from "../../../assets/icon-bolt.png";
 
 const ASSIST = ["關閉", "ECO", "Tour", "Sport", "Turbo", "Boost"];
 
@@ -119,8 +120,9 @@ export default function NavOverlay({
           </div>
 
           <div className="dash-side">
-            {/* 換 icon：把這個 emoji 換成 <img className="dash-icon-img" src={assistIcon} alt="" /> */}
-            <div className="dash-icon">⚡</div>
+            <div className="dash-icon">
+              <img className="dash-icon-img" src={assistIcon} alt="輔助" />
+            </div>
             <div className="dash-val">{ASSIST[live.assist]}</div>
             <div className="dash-lbl">輔助段位</div>
           </div>
