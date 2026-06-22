@@ -3,6 +3,7 @@ import { computeBaseline } from "./decision.js";
 import { useHeartRateEngine } from "./useHeartRateEngine.js";
 import heartIcon from "../../assets/icon-heart.png";
 import lungsIcon from "../../assets/icon-lungs.png";
+import boltIcon from "../../assets/icon-bolt.png";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -46,19 +47,17 @@ function GearBar({ pct, label, color }) {
     <div className="hr-gear">
       <div className="hr-gear-head">
         <span>輔助力檔位</span>
-        <b>
+        <b style={{ color }}>
           {label} · {pct}%
         </b>
       </div>
-      <div className="hr-gear-bars">
+      <div className="hr-gear-bolts">
         {Array.from({ length: total }).map((_, i) => (
-          <span
+          <img
             key={i}
-            className={`hr-gear-seg ${i < on ? "on" : ""}`}
-            style={{
-              height: `${40 + i * 15}%`,
-              ...(i < on ? { background: color } : null),
-            }}
+            src={boltIcon}
+            alt=""
+            className={`hr-gear-bolt ${i < on ? "on" : ""}`}
           />
         ))}
       </div>
