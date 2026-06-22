@@ -1,5 +1,6 @@
 import { fmtDist, gradeColor } from "../slope.js";
 import Speedometer from "./Speedometer.jsx";
+import batteryIcon from "../../../assets/icon-battery.png";
 
 const ASSIST = ["關閉", "ECO", "Tour", "Sport", "Turbo", "Boost"];
 
@@ -82,11 +83,24 @@ export default function NavOverlay({
         📍
       </button>
 
+      {/* Demo 控制（陽春樣式）：在綠色路線指引塊下方。模擬騎乘播放 + 倍速 */}
+      <div className="nav-demo">
+        <span className="nav-demo-tag">DEMO</span>
+        <button className="nav-demo-btn" onClick={onToggleRide}>
+          {finished ? "↺ 重新" : riding ? "⏸ 暫停" : "▶ 開始"}
+        </button>
+        <button className="nav-demo-btn" onClick={onCycleSpeed}>
+          ×{speedMult} 倍速
+        </button>
+      </div>
+
       {/* 底部儀表板：時速表 + 電量 + 輔助段位 */}
       <div className="nav-dash">
         <div className="dash-cluster">
           <div className="dash-side">
-            <div className="dash-icon">🔋</div>
+            <div className="dash-icon">
+              <img className="dash-icon-img" src={batteryIcon} alt="電量" />
+            </div>
             <div className="dash-val" style={{ color: battColor }}>
               {live.battery.toFixed(0)}%
             </div>
@@ -105,6 +119,7 @@ export default function NavOverlay({
           </div>
 
           <div className="dash-side">
+            {/* 換 icon：把這個 emoji 換成 <img className="dash-icon-img" src={assistIcon} alt="" /> */}
             <div className="dash-icon">⚡</div>
             <div className="dash-val">{ASSIST[live.assist]}</div>
             <div className="dash-lbl">輔助段位</div>
@@ -112,13 +127,6 @@ export default function NavOverlay({
         </div>
 
         <div className="dash-info">
-          <button
-            className={`nav-ride ${riding ? "on" : ""}`}
-            onClick={onToggleRide}
-          >
-            {finished ? "↺" : riding ? "⏸" : "▶"}
-          </button>
-
           <div className="nav-bottom-main">
             <div className="nav-big">
               {showRiding ? `${remainMin} 分鐘` : summary?.duration}
@@ -129,9 +137,6 @@ export default function NavOverlay({
             </div>
           </div>
 
-          <button className="nav-speed" onClick={onCycleSpeed}>
-            ×{speedMult}
-          </button>
           <button className="nav-end" onClick={onExit}>
             結束
           </button>

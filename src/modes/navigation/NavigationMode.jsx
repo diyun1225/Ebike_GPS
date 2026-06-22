@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useGoogleMaps } from "./useGoogleMaps.js";
-import { buildSegments, buildAutoSegments, gradeColor, fmtDist } from "./slope.js";
+import { buildAutoSegments, gradeColor, fmtDist } from "./slope.js";
 import { estimateUsedPct, arrivalTime } from "./battery.js";
 import { useLiveTelemetry } from "../../shared/useLiveTelemetry.js";
-import Telemetry from "./components/Telemetry.jsx";
-import SearchPanel from "./components/SearchPanel.jsx";
+import RouteForm from "./components/RouteForm.jsx";
 import RouteSheet from "./components/RouteSheet.jsx";
 import NavOverlay from "./components/NavOverlay.jsx";
+
+const BIKE_KG = 25; // 車身重量（算總載重用）
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "YOUR_API_KEY";
 // 有設定 Map ID（向量地圖）才能啟用 3D 傾斜導航；沒設定就用 2D 順暢跟隨
@@ -82,12 +83,21 @@ export default function NavigationMode({ onBack }) {
   const infoWindowRef = useRef(null);
   const boundsRef = useRef(null);
 
+  // 三階段：form 填表單(無地圖) → preview 看路線/坡度 → nav 車況導航
+  const [phase, setPhase] = useState("form");
+
+  // 表單輸入（提升到這層，preview 的路線列也要讀得到）
+  const [stops, setStops] = useState(["", ""]);
+  const [rider, setRider] = useState(70);
+  const [cargo, setCargo] = useState(0);
+
   const [segments, setSegments] = useState([]);
   const [summary, setSummary] = useState(null);
   const [status, setStatus] = useState({ msg: "", error: false });
   const [loading, setLoading] = useState(false);
-  const [navMode, setNavMode] = useState(false);
   const [riding, setRiding] = useState(false);
+
+  const weightRef = useRef(70 + BIKE_KG); // 規劃時鎖定的總載重
   const [sim, setSim] = useState(null); // 騎乘中的即時數據
   const [speedMult, setSpeedMult] = useState(1); // 加速播放倍率
   const [gps, setGps] = useState(false); // 真實 GPS 導航
@@ -109,19 +119,20 @@ export default function NavigationMode({ onBack }) {
       mapId: MAP_ID,
       mapTypeControl: false,
       streetViewControl: false,
+      fullscreenControl: false, // 手機框內用不到，拿掉才不會擠到右上角的車況
     });
     dirServiceRef.current = new google.maps.DirectionsService();
     dirRendererRef.current = new google.maps.DirectionsRenderer({
       map: mapRef.current,
-      suppressPolyline: true,
+      suppressPolyline: true, // 路線改用我們自己畫的彩色坡度線
     });
     elevServiceRef.current = new google.maps.ElevationService();
     infoWindowRef.current = new google.maps.InfoWindow();
   }, [google]);
 
-  // 切換導航/規劃時，叫地圖重繪、重新框住路線，並推一下強制補載破圖磚塊
+  // 切換階段時，叫地圖重繪、重新框住路線，並推一下強制補載破圖磚塊
   useEffect(() => {
-    if (!mapRef.current || !google) return;
+    if (!mapRef.current || !google || phase === "form") return;
     const map = mapRef.current;
     const t1 = setTimeout(() => {
       google.maps.event.trigger(map, "resize");
@@ -137,11 +148,11 @@ export default function NavigationMode({ onBack }) {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [navMode, google, summary]);
+  }, [phase, google, summary]);
 
   // 模擬騎乘：沿路線推進，速度/踏頻/輔助/電量隨坡度變化
   useEffect(() => {
-    if (!navMode || !riding || !routeRef.current || !google) return;
+    if (phase !== "nav" || !riding || !routeRef.current || !google) return;
     const route = routeRef.current;
     const map = mapRef.current;
     const sph = google.maps.geometry.spherical;
@@ -280,11 +291,11 @@ export default function NavigationMode({ onBack }) {
 
     rafId = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(rafId);
-  }, [navMode, riding, google, speedMult]);
+  }, [phase, riding, google, speedMult]);
 
   // 真實 GPS 導航：用手機定位移動，並把位置對應到規劃路線算坡度/剩餘/轉彎
   useEffect(() => {
-    if (!navMode || !gps || !routeRef.current || !google) return;
+    if (phase !== "nav" || !gps || !routeRef.current || !google) return;
     if (!navigator.geolocation) {
       alert("這個瀏覽器不支援定位");
       setGps(false);
@@ -416,7 +427,7 @@ export default function NavigationMode({ onBack }) {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [navMode, gps, google]);
+  }, [phase, gps, google]);
 
   function toggleRide() {
     if (riding) {
@@ -445,7 +456,7 @@ export default function NavigationMode({ onBack }) {
   }
 
   function exitNav() {
-    setNavMode(false);
+    setPhase("preview"); // 結束導航回到路線預覽（不是回表單）
     setRiding(false);
     setGps(false);
     setSim(null);
@@ -496,7 +507,7 @@ export default function NavigationMode({ onBack }) {
     iw.open(mapRef.current);
   }
 
-  function drawSegments(segs) {
+  function drawSegments(segs, fit = true) {
     const bounds = new google.maps.LatLngBounds();
     segs.forEach((seg) => {
       const poly = new google.maps.Polyline({
@@ -511,15 +522,19 @@ export default function NavigationMode({ onBack }) {
       seg.locs.forEach((l) => bounds.extend(l));
     });
     boundsRef.current = bounds;
-    mapRef.current.fitBounds(bounds);
+    if (fit) mapRef.current.fitBounds(bounds); // 拖曳微調時不重新框，保留使用者目前視角
   }
 
-  async function planRoute({ stops, mode, auto, weightKg }) {
-    const pts = (stops || []).filter(Boolean);
+  // 由「規劃路線」按鈕觸發：用表單的地名查路線，成功後進入預覽階段
+  async function planRoute() {
+    const pts = stops.map((s) => s.trim()).filter(Boolean);
     if (pts.length < 2) {
       setStatus({ msg: "請至少輸入起點與目的地", error: true });
       return;
     }
+    weightRef.current =
+      (parseFloat(rider) || 0) + (parseFloat(cargo) || 0) + BIKE_KG;
+
     setLoading(true);
     setStatus({ msg: "規劃路線中…", error: false });
     clearRoute();
@@ -535,9 +550,33 @@ export default function NavigationMode({ onBack }) {
         origin,
         destination,
         waypoints,
-        travelMode: google.maps.TravelMode[mode],
+        travelMode: google.maps.TravelMode.BICYCLING,
       });
+      await applyDirections(dirResult);
+      setPhase("preview");
+    } catch (err) {
+      console.error(err);
+      const code = err?.code || "";
+      let msg;
+      if (code === "ZERO_RESULTS") msg = "找不到這兩地之間的路線，換個交通方式試試";
+      else if (code === "NOT_FOUND") msg = "找不到地點，請確認地名是否正確";
+      else if (code === "REQUEST_DENIED")
+        msg = `路線服務被拒絕：API 金鑰未授權此網址（${window.location.origin}）或未啟用 Directions API`;
+      else msg = "發生錯誤：" + (err?.message || code || "未知");
+      setStatus({ msg, error: true });
+      setLoading(false);
+    }
+  }
+
+  // 從一份路線結果算坡度/電量/轉彎並畫線
+  async function applyDirections(dirResult) {
+    try {
       dirRendererRef.current.setDirections(dirResult);
+      setLoading(true);
+
+      // 清掉舊的彩色坡度線（summary/segments 等新值算好再覆蓋）
+      polylinesRef.current.forEach((p) => p.setMap(null));
+      polylinesRef.current = [];
 
       const route = dirResult.routes[0];
       const legs = route.legs; // 多站會有多段
@@ -558,9 +597,10 @@ export default function NavigationMode({ onBack }) {
         samples: 512,
       });
 
-      const { segments: segs, totalDist } = auto
-        ? buildAutoSegments(google, elevResult.results)
-        : buildSegments(google, elevResult.results, 10);
+      const { segments: segs, totalDist } = buildAutoSegments(
+        google,
+        elevResult.results
+      );
 
       drawSegments(segs);
       setSegments(segs);
@@ -568,7 +608,7 @@ export default function NavigationMode({ onBack }) {
       const estUsedPct = estimateUsedPct({
         distanceM: totalDist,
         gainM: totalGain,
-        weightKg,
+        weightKg: weightRef.current,
       });
 
       // 存一份給模擬騎乘用的路線資料
@@ -612,19 +652,15 @@ export default function NavigationMode({ onBack }) {
         estUsedPct,
       });
       setStatus({
-        msg: auto
-          ? `完成！自動依坡度分成 ${segs.length} 段`
-          : `完成！共 ${segs.length} 段`,
+        msg: `完成！自動依坡度分成 ${segs.length} 段`,
         error: false,
       });
     } catch (err) {
       console.error(err);
-      const code = err?.code || "";
-      let msg;
-      if (code === "ZERO_RESULTS") msg = "找不到這兩地之間的路線，換個交通方式試試";
-      else if (code === "NOT_FOUND") msg = "找不到地點，請確認地名是否正確";
-      else msg = "發生錯誤：" + (err?.message || code || "未知");
-      setStatus({ msg, error: true });
+      setStatus({
+        msg: "路線計算失敗：" + (err?.message || err?.code || "未知"),
+        error: true,
+      });
     } finally {
       setLoading(false);
     }
@@ -635,36 +671,77 @@ export default function NavigationMode({ onBack }) {
     showSegmentInfo(seg);
   }
 
+  // 預覽列要顯示的起點 / 終點 / 途經點數
+  const namedStops = stops.map((s) => s.trim()).filter(Boolean);
+  const firstStop = namedStops[0] || "起點";
+  const lastStop = namedStops[namedStops.length - 1] || "終點";
+  const midCount = Math.max(0, namedStops.length - 2);
+
   return (
-    <div className={`dash ${navMode ? "nav" : ""}`}>
+    <div
+      className={`dash mode-enter ${phase === "nav" ? "nav" : ""}`}
+      style={{ "--enter-color": "#eaf5ed" }}
+    >
+      {/* 進場罩：起始為主畫面擴散的同色，再淡開→無縫接續，不會黑/灰閃一下 */}
+      <div className="mode-veil" aria-hidden="true" />
       <main id="map" ref={mapDivRef} />
 
-      {!navMode && (
-        <>
-          <button className="mode-back" onClick={onBack} aria-label="返回主畫面">
-            ‹ 主畫面
-          </button>
-          <Telemetry live={live} />
-          <SearchPanel
+      {/* 返回主畫面（導航階段交給 NavOverlay 的結束鈕） */}
+      {phase !== "nav" && (
+        <button className="mode-back" onClick={onBack} aria-label="返回主畫面">
+          ‹ 主畫面
+        </button>
+      )}
+
+      {/* 第一步：填表單，先不顯示地圖（用整頁面板蓋住） */}
+      {phase === "form" && (
+        <div className="route-form-screen">
+          <h1 className="rs-header">電量管理模式</h1>
+          <RouteForm
+            stops={stops}
+            setStops={setStops}
+            rider={rider}
+            setRider={setRider}
+            cargo={cargo}
+            setCargo={setCargo}
             ready={!!google}
             loading={loading}
             status={loadError ? { msg: loadError, error: true } : status}
-            summary={summary}
             onPlan={planRoute}
           />
+        </div>
+      )}
+
+      {/* 第二步：地圖 + 起終點 + 坡度路段，點開始導航才進車況 */}
+      {phase === "preview" && (
+        <>
+          <div
+            className="search collapsed route-edit-bar"
+            onClick={() => setPhase("form")}
+          >
+            <span className="oneline">
+              <b>📍 {firstStop}</b>
+              {midCount > 0 && <span className="mid"> · 經 {midCount} 點</span>}
+              <span className="arrow">→</span>
+              <b>🏁 {lastStop}</b>
+            </span>
+            <span className="edit">✎</span>
+          </div>
+
           {summary && (
             <RouteSheet
               summary={summary}
               segments={segments}
               live={live}
               onFocusSegment={focusSegment}
-              onStartNav={() => setNavMode(true)}
+              onStartNav={() => setPhase("nav")}
             />
           )}
         </>
       )}
 
-      {navMode && (
+      {/* 第三步：開始導航 → 車況儀表板 */}
+      {phase === "nav" && (
         <NavOverlay
           live={sim || live}
           summary={summary}

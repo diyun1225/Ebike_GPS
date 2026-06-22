@@ -11,9 +11,9 @@ export const MOTOR = {
 
 // 三個心率區間（車錶燈色）
 export const ZONES = {
-  LOW: { id: "LOW", label: "HR_LOW", name: "低強度", light: "藍燈", color: "#2f7bff" },
-  HIGH: { id: "HIGH", label: "HR_HIGH", name: "中強度", light: "綠燈", color: "#1db954" },
-  MAX: { id: "MAX", label: "HR_MAX", name: "高強度", light: "橘燈", color: "#ff8a1f" },
+  LOW: { id: "LOW", abc: "A", label: "HR_LOW", name: "低強度", light: "藍燈", color: "#2f7bff" },
+  HIGH: { id: "HIGH", abc: "B", label: "HR_HIGH", name: "中強度", light: "綠燈", color: "#1db954" },
+  MAX: { id: "MAX", abc: "C", label: "HR_MAX", name: "高強度", light: "橘燈", color: "#ff8a1f" },
 };
 
 // [系統啟動] 建立個人化基準線

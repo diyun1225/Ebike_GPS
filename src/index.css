@@ -34,22 +34,28 @@ body {
   right: 12px;
   z-index: 600;
   display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
   justify-content: center;
+  /* 左邊留給「返回主畫面」鈕，車況置中於剩餘空間、單行不換行（換行會被下方路線卡擋住） */
+  padding-left: 96px;
+  padding-right: 4px;
 }
 
+/* iPhone 玻璃感：半透明深色 + 高斯模糊 + 提高飽和 + 一圈細邊 */
 .pill {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: rgba(20, 22, 30, 0.72);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(28, 30, 40, 0.45);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
   color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
   padding: 6px 11px;
   font-size: 14px;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
 .pill .pi {
@@ -226,12 +232,31 @@ body {
   box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
 }
 
+/* 上方握把：可拖曳改變卡片高度，黏在頂端捲動時也看得到 */
+.sheet-grab {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 10px;
+  margin-bottom: 2px;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  cursor: grab;
+  touch-action: none; /* 拖曳時不要觸發頁面捲動 */
+}
+.sheet-grab:active {
+  cursor: grabbing;
+}
 .sheet-handle {
-  width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background: #d0d3d8;
-  margin: 4px auto 12px;
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: #c4c8ce;
+}
+.sheet-grab:active .sheet-handle {
+  background: #9aa0a8;
 }
 
 .sheet-stats {
@@ -532,13 +557,20 @@ button:disabled {
   min-width: 64px;
 }
 .dash-icon {
-  font-size: 18px;
+  font-size: 22px;
   line-height: 1;
 }
+/* 換成你的 icon 圖檔時用這個 class（emoji 換成 <img>） */
+.dash-icon-img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  display: inline-block;
+}
 .dash-val {
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 800;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 .dash-lbl {
   font-size: 11px;
@@ -565,40 +597,41 @@ button:disabled {
 
 /* SVG 時速表 */
 .gauge {
-  width: 150px;
+  width: 158px;
   height: auto;
   display: block;
 }
 .gauge-bg {
   fill: none;
-  stroke: #e6e9ed;
-  stroke-width: 13;
+  stroke: #eceff3;
+  stroke-width: 14;
   stroke-linecap: round;
 }
 .gauge-fg {
   fill: none;
-  stroke: #1a73e8;
-  stroke-width: 13;
+  stroke: url(#gaugeGrad);
+  stroke-width: 14;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.3s ease;
 }
-.gauge-needle {
-  stroke: #e53935;
-  stroke-width: 4;
+.gauge-tick {
+  stroke: #d6dae0;
+  stroke-width: 2;
   stroke-linecap: round;
-  transition: transform 0.3s ease;
 }
-.gauge-hub {
-  fill: #333;
+.gauge-tick.maj {
+  stroke: #aab1ba;
+  stroke-width: 2.5;
 }
 .gauge-num {
-  font-size: 36px;
+  font-size: 38px;
   font-weight: 800;
   fill: #1a1f2b;
 }
 .gauge-unit {
   font-size: 12px;
-  fill: #888;
+  font-weight: 600;
+  fill: #9aa0a8;
 }
 
 .dash-info {
@@ -647,33 +680,41 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
-.nav-ride {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: none;
-  background: #1a73e8;
+/* Demo 控制列：綠色指引塊下方、左側。陽春樣式（這是 demo 功能） */
+.nav-demo {
+  position: absolute;
+  top: 92px;
+  left: 12px;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+.nav-demo-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
   color: #fff;
-  font-size: 16px;
-  font-weight: 800;
+  background: #9aa0a8;
+  padding: 4px 7px;
+  border-radius: 6px;
+}
+.nav-demo-btn {
+  width: auto;
+  margin: 0;
+  padding: 6px 11px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #3c4043;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #dadde1;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   cursor: pointer;
 }
-.nav-ride.on {
-  background: #5f6368;
-}
-
-.nav-speed {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: none;
-  background: #eef1f4;
-  color: #1a1f2b;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
+.nav-demo-btn:hover:not(:disabled) {
+  background: #fff;
 }
 
 .nav-end {
@@ -697,89 +738,311 @@ button:disabled {
 }
 
 /* ===== 主畫面（選模式） ===== */
-.dash.home {
+/* 背景圖由 HomeScreen 用 inline style 帶入（src/assets/bg-home.png），
+   這裡只負責鋪滿與底色；::before 在頂端加一層淡白漸層讓標題清楚。 */
+.dash.home2 {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(160deg, #0f2027, #203a43, #2c5364);
-  color: #fff;
-  padding: 0 22px;
+  align-items: center;
+  background-color: #dce9da;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #173a26;
+  padding: 0 24px;
+  overflow: hidden;
+}
+.dash.home2::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(244, 250, 244, 0.85) 0%,
+    rgba(244, 250, 244, 0.25) 26%,
+    rgba(244, 250, 244, 0) 44%
+  );
 }
 
-.home-head {
+.home2-head {
+  position: relative;
+  z-index: 1;
   text-align: center;
-  margin-top: 18vh;
-  margin-bottom: 40px;
+  margin-top: 12vh;
+  animation: homeHeadIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.home-logo {
-  font-size: 56px;
-  line-height: 1;
-}
-.home-title {
-  font-size: 26px;
+.home2-title {
+  font-size: 30px;
   font-weight: 800;
-  margin: 14px 0 4px;
+  letter-spacing: 0.5px;
+  color: #16361f;
+  text-shadow: 0 1px 10px rgba(255, 255, 255, 0.6);
 }
-.home-sub {
-  font-size: 14px;
-  opacity: 0.7;
-}
-
-.home-modes {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.mode-card {
+.home2-divider {
   display: flex;
   align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.home2-divider .hl {
+  width: 46px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #2f8a4d);
+}
+.home2-divider .hl:last-child {
+  background: linear-gradient(90deg, #2f8a4d, transparent);
+}
+.home2-divider .hbike {
+  font-size: 20px;
+  animation: bikeBob 2.6s ease-in-out infinite;
+}
+
+/* 兩顆模式鈕（圓圈+icon+文字都在圖片裡） */
+.home2-modes {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
   gap: 16px;
-  width: 100%;
-  text-align: left;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 18px;
-  padding: 18px 18px;
+  margin-top: 8vh;
+}
+
+/* 蓋掉全域 button 的藍底/hover 變色（權重要等於 button:hover:not(:disabled)） */
+.mode-orb,
+.mode-orb:hover:not(:disabled),
+.mode-orb:active,
+.mode-orb:focus {
+  width: auto;
   margin: 0;
-  color: #fff;
+  padding: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
   cursor: pointer;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: background 0.15s, transform 0.1s;
 }
-.mode-card:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
+.mode-orb {
+  /* 進場：淡入 + 由下滑上，依 --delay 依序出現 */
+  animation: orbIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--delay);
 }
-.mode-card:active:not(:disabled) {
-  transform: scale(0.98);
-}
-.mode-card:disabled {
+.mode-orb:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.mode-card-icon {
-  font-size: 32px;
-  flex-shrink: 0;
+
+.orb-img {
+  display: block;
+  width: 150px;
+  height: auto;
+  -webkit-user-drag: none;
+  user-select: none;
+  /* 待機輕輕上下浮動，不死板 */
+  animation: orbFloat 3.4s ease-in-out infinite;
+  transition: transform 0.18s ease, filter 0.18s ease;
 }
-.mode-card-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+.mode-orb:nth-child(2) .orb-img {
+  animation-delay: 0.6s; /* 兩顆浮動錯開，比較自然 */
 }
-.mode-card-title {
-  font-size: 18px;
-  font-weight: 800;
+.mode-orb:active:not(:disabled) .orb-img {
+  transform: scale(0.93);
+  filter: brightness(0.97);
 }
-.mode-card-desc {
-  font-size: 13px;
-  opacity: 0.72;
+
+/* 選定：被點的放大發光，另一顆淡出 */
+.mode-orb.picked .orb-img {
+  animation: orbPick 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
-.mode-card-arrow {
-  font-size: 26px;
-  opacity: 0.6;
-  flex-shrink: 0;
+.mode-orb.dimmed {
+  animation: orbDim 0.4s ease forwards;
+}
+
+/* 顏色擴散：從點擊圓心長出，鋪滿整個手機畫面 */
+.mode-flood {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  margin-left: -60px;
+  margin-top: -60px;
+  border-radius: 50%;
+  z-index: 2000;
+  pointer-events: none;
+  transform: scale(0);
+  animation: floodExpand 0.56s cubic-bezier(0.5, 0, 0.7, 0.3) forwards;
+}
+
+@keyframes homeHeadIn {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}
+@keyframes orbIn {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.85);
+  }
+}
+@keyframes orbFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes orbPick {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  100% {
+    transform: scale(1.4);
+    filter: drop-shadow(0 0 26px var(--accent));
+  }
+}
+@keyframes orbDim {
+  to {
+    opacity: 0.18;
+    transform: scale(0.85);
+  }
+}
+@keyframes floodExpand {
+  0% {
+    transform: scale(0);
+    opacity: 0.85;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(17);
+    opacity: 1;
+  }
+}
+@keyframes bikeBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* 尊重「減少動態效果」的系統設定 */
+@media (prefers-reduced-motion: reduce) {
+  .dash.home2 *,
+  .dash.home2 *::before,
+  .dash.home2 *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ===== 進入各模式時：內容由上而下逐項淡入（不死板瞬間跳出） ===== */
+@keyframes sectionIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+/* 進場銜接：主畫面點下後會用「擴散色」鋪滿整個畫面才切到本模式。
+   問題是 .dash 預設黑底、地圖一開始是灰的，硬切會閃一下很醜。
+   作法：本模式底色 = 同一個擴散色，再蓋一層同色的罩淡開，
+   讓新畫面從那個顏色裡浮現，無縫接續。--enter-color 由各模式 inline 帶入。 */
+.dash.mode-enter {
+  background: var(--enter-color, #eaf5ed);
+}
+.mode-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5000;
+  pointer-events: none;
+  background: var(--enter-color, #eaf5ed);
+  animation: veilReveal 0.62s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes veilReveal {
+  0%,
+  22% {
+    opacity: 1; /* 先穩住，等地圖/面板在底下就位再淡開 */
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* 地圖隨著罩淡開時一起淡入，取代「灰底突然出現」 */
+.dash.mode-enter > #map {
+  animation: modeMapIn 0.62s ease both;
+}
+@keyframes modeMapIn {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-veil,
+  .dash.mode-enter > #map {
+    animation-duration: 0.001s !important;
+  }
+}
+
+/* 電量管理（導航・規劃畫面）：返回鈕 → 頂部數據條 → 搜尋卡 */
+.dash:not(.hr):not(.home2):not(.nav) > .mode-back {
+  animation: sectionIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.05s;
+}
+.telemetry {
+  animation: sectionIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.15s;
+}
+.search {
+  animation: sectionIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.25s;
+}
+
+/* 心率模式：各區塊由上而下依序淡入 */
+.dash.hr > * {
+  animation: sectionIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.dash.hr > *:nth-child(1) {
+  animation-delay: 0.05s;
+}
+.dash.hr > *:nth-child(2) {
+  animation-delay: 0.13s;
+}
+.dash.hr > *:nth-child(3) {
+  animation-delay: 0.21s;
+}
+.dash.hr > *:nth-child(4) {
+  animation-delay: 0.29s;
+}
+.dash.hr > *:nth-child(5) {
+  animation-delay: 0.37s;
+}
+.dash.hr > *:nth-child(6) {
+  animation-delay: 0.45s;
+}
+.dash.hr > *:nth-child(7) {
+  animation-delay: 0.53s;
+}
+.dash.hr > *:nth-child(8) {
+  animation-delay: 0.61s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash.hr > *,
+  .telemetry,
+  .search,
+  .dash > .mode-back {
+    animation-duration: 0.001s !important;
+  }
 }
 
 /* 各模式左上角的「返回主畫面」鈕 */
@@ -829,240 +1092,579 @@ button:disabled {
   opacity: 0.7;
 }
 
-/* ===== 心率模式 ===== */
+/* ===== 心率模式（淡粉色系，與 icon 圓底同色） ===== */
+/* 把 --zc 註冊成顏色，背景換區間時才能「平滑漸變」而非瞬間跳色 */
+@property --zc {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ff8aa3;
+}
 .dash.hr {
-  background: linear-gradient(165deg, #16181d, #1f242c);
-  color: #fff;
-  padding: 56px 20px 20px;
+  /* 背景隨燈號漸變：頂部帶該區間色，往下淡入中性白，一眼看出強度（少粉避免誤導） */
+  background: linear-gradient(
+    170deg,
+    color-mix(in srgb, var(--zc) 26%, #ffffff) 0%,
+    color-mix(in srgb, var(--zc) 8%, #fbfbfc) 50%,
+    #fbfbfc 100%
+  );
+  color: #4a2e38;
+  padding: 50px 20px 24px;
   overflow-y: auto;
+  transition: --zc 0.6s ease;
+}
+
+/* 頁尾品牌字：低調的小灰字，不搶戲 */
+.hr-header {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #b89098;
+  margin: 22px 0 2px;
 }
 
 /* 基準線設定 */
 .hr-setup {
-  margin-top: 8vh;
+  margin-top: 3vh;
 }
 .hr-setup h2 {
-  font-size: 22px;
+  font-size: 19px;
   font-weight: 800;
+  color: #4a2e38;
+  text-align: center;
+  margin-bottom: 18px;
 }
-.hr-setup-sub {
-  font-size: 13px;
-  opacity: 0.6;
-  margin: 4px 0 22px;
+
+/* 年齡 + 安靜心跳並排 */
+.hr-setup-row {
+  display: flex;
+  gap: 12px;
+}
+.hr-field {
+  flex: 1;
 }
 .hr-setup label {
-  color: #cfd4dc;
-  margin-top: 12px;
+  color: #a86b78;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
 }
 .hr-setup input {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: #fff;
+  border: 1px solid #f3c9d1;
+  color: #4a2e38;
 }
+.hr-setup input:focus {
+  border-color: #ff3b5c;
+}
+
 .hr-baseline-preview {
   display: flex;
   gap: 12px;
-  margin: 22px 0 8px;
+  margin: 20px 0 8px;
 }
 .hr-baseline-preview div {
   flex: 1;
-  background: rgba(255, 255, 255, 0.07);
+  background: #fff;
+  border: 1px solid #f7d5db;
   border-radius: 14px;
   padding: 14px;
   text-align: center;
+  box-shadow: 0 4px 14px rgba(230, 57, 80, 0.06);
 }
 .hr-baseline-preview b {
   display: block;
   font-size: 26px;
   font-weight: 800;
-  color: #ff5a7a;
+  color: #ff3b5c;
 }
 .hr-baseline-preview span {
   font-size: 12px;
-  opacity: 0.65;
+  color: #a86b78;
 }
 .hr-start {
   margin-top: 18px;
   background: #ff3b5c;
+  box-shadow: 0 8px 20px rgba(255, 59, 92, 0.28);
 }
 .hr-start:hover:not(:disabled) {
   background: #e22f4e;
 }
 
-/* 車錶燈 + 心率 */
-.hr-gauge {
-  position: relative;
+/* 確認視窗 */
+.hr-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26px;
+  background: rgba(74, 46, 56, 0.38);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: hrFadeIn 0.2s ease;
+}
+.hr-modal {
+  width: 100%;
+  max-width: 300px;
+  background: #fff;
+  border-radius: 22px;
+  padding: 24px 22px 18px;
   text-align: center;
-  padding: 18px 0 14px;
+  box-shadow: 0 20px 50px rgba(74, 46, 56, 0.3);
+  animation: hrModalPop 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.hr-light {
-  width: 14px;
-  height: 14px;
-  margin: 0 auto 10px;
-  border-radius: 50%;
-  background: var(--zc);
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--zc) 22%, transparent),
-    0 0 22px var(--zc);
-}
-.hr-bpm b {
-  font-size: 72px;
-  font-weight: 800;
+.hr-modal-icon {
+  font-size: 40px;
   line-height: 1;
-  color: var(--zc);
 }
-.hr-bpm span {
-  font-size: 18px;
-  font-weight: 700;
-  opacity: 0.6;
-  margin-left: 6px;
-}
-.hr-zone-name {
-  font-size: 17px;
-  font-weight: 800;
-  margin-top: 8px;
-  color: var(--zc);
-}
-.hr-zone-target {
-  font-size: 12px;
-  opacity: 0.6;
-  margin-top: 2px;
-}
-
-/* 目前狀態 */
-.hr-state {
-  background: color-mix(in srgb, var(--zc) 16%, #1c2129);
-  border: 1px solid color-mix(in srgb, var(--zc) 45%, transparent);
-  border-radius: 14px;
-  padding: 12px 16px;
-  margin-top: 12px;
-  text-align: center;
-}
-.hr-state-name {
+.hr-modal h3 {
   font-size: 19px;
   font-weight: 800;
+  color: #4a2e38;
+  margin: 10px 0 18px;
 }
-.hr-state-note {
+.hr-modal-rows {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.hr-modal-rows div {
+  flex: 1;
+  background: #fdeaea;
+  border-radius: 14px;
+  padding: 12px 8px;
+}
+.hr-modal-rows span {
+  display: block;
   font-size: 12px;
-  opacity: 0.72;
+  color: #a86b78;
+  margin-bottom: 4px;
+}
+.hr-modal-rows b {
+  font-size: 24px;
+  font-weight: 800;
+  color: #ff3b5c;
+}
+.hr-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+.hr-modal-actions button {
+  flex: 1;
+  margin: 0;
+  border-radius: 12px;
+}
+.hr-modal-cancel {
+  background: #f1e3e6;
+  color: #6b4a52;
+}
+.hr-modal-cancel:hover:not(:disabled) {
+  background: #e8d5d9;
+}
+.hr-modal-ok {
+  background: #ff3b5c;
+}
+.hr-modal-ok:hover:not(:disabled) {
+  background: #e22f4e;
+}
+@keyframes hrFadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes hrModalPop {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+}
+
+/* 燈號區間 pill */
+/* 狀態區：小代號 chip（kicker）在上、大狀態名在下；不加框，靠層級與背景色 */
+.hr-zonepill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 2px auto 10px;
+}
+.hr-zonepill-abc {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  padding: 3px 13px;
+  border-radius: 999px;
+  background: var(--zc);
+  color: #fff;
+}
+.hr-zonepill-name {
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1;
+  /* 用加深版區間色：保留色相但夠深，避免綠字配綠底糊掉 */
+  color: color-mix(in srgb, var(--zc) 68%, #241016);
+}
+.hr-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--zc);
+  animation: hrLightPulse 1.5s ease-in-out infinite;
+}
+@keyframes hrLightPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--zc) 55%, transparent),
+      0 0 8px var(--zc);
+    transform: scale(0.92);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--zc) 0%, transparent),
+      0 0 18px var(--zc);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--zc) 0%, transparent),
+      0 0 8px var(--zc);
+    transform: scale(0.92);
+  }
+}
+
+/* 兩個圓圈儀表 */
+.hr-rings {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 4px;
+  /* 白卡：讓圓圈儀表從帶色背景上跳出來、看得清楚 */
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 14px 10px;
+  box-shadow: 0 6px 20px rgba(120, 70, 85, 0.1);
+}
+.hr-ring {
+  flex: 1;
+  position: relative;
+}
+.hr-ring-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.hr-ring-track {
+  fill: none;
+  stroke: #edeef1;
+  stroke-width: 12;
+}
+.hr-ring-arc {
+  fill: none;
+  stroke: var(--rc);
+  stroke-width: 12;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;
+}
+.hr-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.hr-ring-icon {
+  font-size: 24px;
+  transform-origin: center;
+  animation-name: hrPulse;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.hr-ring-img {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.hr-ring-num {
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--rc);
   margin-top: 2px;
+}
+.hr-ring-unit {
+  font-size: 12px;
+  font-weight: 700;
+  color: #a86b78;
+}
+.hr-ring-sub {
+  font-size: 13px;
+  font-weight: 800;
+  color: #6b4a52;
+  margin-top: 3px;
+}
+@keyframes hrPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.32);
+  }
+  36% {
+    transform: scale(1);
+  }
 }
 
 /* 區間刻度條 */
 .hr-zonebar {
   margin: 16px 2px 4px;
 }
+.hr-zonebar-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #a86b78;
+  margin-bottom: 8px;
+}
 .hr-zonebar-track {
   position: relative;
-  display: flex;
   height: 8px;
   border-radius: 999px;
-  overflow: hidden;
-}
-.hr-zonebar-track .z {
-  height: 100%;
-}
-.z-low {
-  background: #2f7bff;
-}
-.z-high {
-  background: #1db954;
-}
-.z-max {
-  background: #ff8a1f;
+  /* 藍→綠→橘 連續漸層（色彩中心對齊各區間） */
+  background: linear-gradient(
+    90deg,
+    #2f7bff 0%,
+    #1db954 34%,
+    #ff8a1f 72%,
+    #ff8a1f 100%
+  );
 }
 .hr-zonebar-cursor {
   position: absolute;
   top: 50%;
   width: 4px;
   height: 16px;
-  background: #fff;
+  background: #4a2e38;
   border-radius: 2px;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.25);
   transition: left 0.4s ease;
 }
 .hr-zonebar-lbls {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  opacity: 0.5;
+  color: #a86b78;
   margin-top: 4px;
 }
 
-/* 呼吸 / 馬達數據 */
-.hr-metrics {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
-}
-.hr-metric {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.06);
+/* 輔助力檔位（階梯式分段） */
+.hr-gear {
+  margin-top: 18px;
+  background: #fff;
+  border: 1px solid #f7d5db;
   border-radius: 14px;
-  padding: 12px 8px;
-  text-align: center;
+  padding: 12px 14px 14px;
+  box-shadow: 0 4px 14px rgba(230, 57, 80, 0.05);
 }
-.hr-metric-lbl {
-  display: block;
-  font-size: 11px;
-  opacity: 0.6;
+.hr-gear-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
 }
-.hr-metric b {
-  font-size: 26px;
-  font-weight: 800;
+.hr-gear-head span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #a86b78;
 }
-.hr-metric b small {
+.hr-gear-head b {
   font-size: 14px;
-  margin-left: 1px;
+  font-weight: 800;
+  color: #4a2e38;
 }
-.hr-metric-unit {
-  display: block;
+.hr-gear-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 40px;
+}
+.hr-gear-seg {
+  flex: 1;
+  border-radius: 5px 5px 3px 3px;
+  background: #f3d9de;
+  transition: background 0.3s ease;
+}
+.hr-gear-seg.on {
+  box-shadow: 0 2px 8px rgba(230, 57, 80, 0.18);
+}
+
+/* Demo 示範控制（陽春版，與正式內容用虛線分隔） */
+.hr-demo {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px dashed #e8c2ca;
+}
+.hr-demo-label {
   font-size: 11px;
-  opacity: 0.55;
+  color: #b58a92;
+  text-align: center;
+  letter-spacing: 0.3px;
+  margin-bottom: 10px;
 }
-
-.hr-motorbar {
-  height: 10px;
-  margin-top: 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-}
-.hr-motorbar-fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.4s ease, background 0.3s ease;
-}
-
-/* 出力情境按鈕 */
 .hr-efforts {
   display: flex;
   gap: 8px;
-  margin-top: 18px;
 }
 .hr-effort {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
   margin: 0;
-  padding: 10px 4px;
-  font-size: 13px;
+  padding: 11px 2px;
+  font-size: 14px;
   font-weight: 700;
-  color: #cfd4dc;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid transparent;
-  border-radius: 14px;
+  color: #9a7a82;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid #f0d8dd;
+  border-radius: 10px;
+  box-shadow: none;
 }
 .hr-effort:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.85);
 }
 .hr-effort.on {
-  background: rgba(255, 59, 92, 0.2);
-  border-color: #ff3b5c;
-  color: #fff;
+  background: #ffe1e7;
+  border-color: #ff8fa3;
+  color: #e6293f;
 }
-.hr-effort-icon {
-  font-size: 20px;
+
+/* ===== 電量管理：第一步設定表單（整頁蓋住地圖，風格對齊心率模式） ===== */
+.route-form-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 700; /* 蓋住底下的地圖 */
+  overflow-y: auto;
+  padding: 34px 20px 28px;
+  background: linear-gradient(170deg, #f1faf3 0%, #e4f4e9 52%, #d6efdf 100%);
+  color: #173a26;
+}
+.rs-header {
+  text-align: center;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #0e9f4f;
+  margin: 0 0 8px;
+}
+.rs-setup {
+  margin-top: 3vh;
+}
+.rs-setup h2 {
+  font-size: 19px;
+  font-weight: 800;
+  color: #173a26;
+  text-align: center;
+  margin-bottom: 18px;
+}
+.rs-stops {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rs-stop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rs-dot {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.rs-stop-row input {
+  flex: 1;
+  margin: 0;
+  background: #fff;
+  border: 1px solid #cfe6d6;
+  border-radius: 12px;
+  color: #173a26;
+}
+.rs-stop-row input:focus {
+  border-color: #0e9f4f;
+}
+.rs-del {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #e7f1ea;
+  color: #5a8a6c;
+  font-size: 14px;
+}
+.rs-del:hover:not(:disabled) {
+  background: #d9e9df;
+}
+.rs-add {
+  width: 100%;
+  margin: 12px 0 0;
+  padding: 11px;
+  background: #e7f3ec;
+  color: #0e9f4f;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.rs-add:hover:not(:disabled) {
+  background: #dcebe1;
+}
+.rs-setup-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+.rs-field {
+  flex: 1;
+}
+.rs-field label {
+  display: block;
+  color: #5a8a6c;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.rs-field input {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #cfe6d6;
+  border-radius: 12px;
+  color: #173a26;
+}
+.rs-field input:focus {
+  border-color: #0e9f4f;
+}
+.rs-start {
+  width: 100%;
+  margin-top: 22px;
+  padding: 14px;
+  background: #0e9f4f;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 8px 20px rgba(14, 159, 79, 0.28);
+}
+.rs-start:hover:not(:disabled) {
+  background: #0c8a45;
+}
+.rs-start:disabled {
+  background: #a9d6ba;
+  box-shadow: none;
+}
+.route-form-screen .s-status {
+  margin-top: 12px;
 }

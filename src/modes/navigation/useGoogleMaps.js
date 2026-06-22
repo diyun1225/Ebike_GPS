@@ -32,6 +32,11 @@ export function useGoogleMaps(apiKey) {
       setError("尚未設定 API 金鑰，請在 .env 填入 VITE_GOOGLE_MAPS_API_KEY");
       return;
     }
+    // 金鑰驗證失敗（最常見：此網域不在「HTTP 參照網址」允許清單）
+    window.gm_authFailure = () =>
+      setError(
+        `地圖金鑰未授權此網址（${window.location.origin}）。請到 Google Cloud Console 把此網址加入 API 金鑰的「HTTP 參照網址」允許清單`
+      );
     loadGoogleMaps(apiKey)
       .then((g) => setGoogle(g))
       .catch((e) => setError(e.message));
