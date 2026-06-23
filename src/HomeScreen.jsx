@@ -4,15 +4,18 @@
 import { useState } from "react";
 import batteryImg from "./assets/mode-battery.png";
 import heartImg from "./assets/mode-heart.png";
+import suspensionImg from "./assets/mode-suspension.png";
 import bgImg from "./assets/bg-home.png";
 
+// labelBelow: 圖片本身沒有烤文字，需由程式在圖下方補上 label
 const MODES = [
   {
     id: "navigation",
     label: "電量管理模式",
     img: batteryImg,
     accent: "#0e9f4f", // 選定發光用（飽和色）
-    flood: "#eaf5ed", // 擴散用：跟 icon 圓底同色，轉場才無縫
+    flood: "#eef7f0", // 擴散用：跟 icon 圓底同色，轉場才無縫
+    labelBelow: true,
     enabled: true,
   },
   {
@@ -20,7 +23,17 @@ const MODES = [
     label: "心率模式",
     img: heartImg,
     accent: "#ff3b5c",
-    flood: "#fdeaea",
+    flood: "#fdeef0",
+    labelBelow: true,
+    enabled: true,
+  },
+  {
+    id: "suspension",
+    label: "智慧避震模式",
+    img: suspensionImg,
+    accent: "#2f8fd0",
+    flood: "#eef9fb",
+    labelBelow: true,
     enabled: true,
   },
 ];
@@ -86,6 +99,7 @@ export default function HomeScreen({ onSelect }) {
             onClick={(e) => choose(e, m)}
           >
             <img className="orb-img" src={m.img} alt={m.label} draggable="false" />
+            {m.labelBelow && <span className="orb-label">{m.label}</span>}
           </button>
         ))}
       </div>
