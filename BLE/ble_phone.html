@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCPA 車況(BLE)</title>
+</head>
+<body>
+  <h3>CCPA 車況(BLE)</h3>
+  <button id="connectBtn">連線</button>
+  <button id="clearBtn">清空</button>
+  <p id="status">尚未連線</p>
+
+  <h4>控制</h4>
+  <button id="shiftUpBtn" disabled>升檔 ▲</button>
+  <button id="shiftDownBtn" disabled>降檔 ▼</button>
+
+  <p>助力段位:
+    <button class="assistBtn" data-level="0" disabled>0 off</button>
+    <button class="assistBtn" data-level="1" disabled>1 eco</button>
+    <button class="assistBtn" data-level="2" disabled>2 eco+</button>
+    <button class="assistBtn" data-level="3" disabled>3 normal</button>
+    <button class="assistBtn" data-level="4" disabled>4 sport</button>
+    <button class="assistBtn" data-level="5" disabled>5 sport+</button>
+  </p>
+
+  <p>原始指令(組員輸出的字串直接貼這裡送):
+    <input id="rawCmdInput" type="text" placeholder="例:CAN,2940015,2,02,03" size="32" disabled />
+    <button id="rawCmdBtn" disabled>送出</button>
+  </p>
+
+  <h4>資料記錄(CSV)</h4>
+  <button id="recBtn" disabled>⏺ 開始記錄</button>
+  <button id="dlBtn" disabled>⬇ 下載 CSV</button>
+  <button id="copyBtn" disabled>📋 複製</button>
+  <span id="recInfo">未記錄</span>
+
+  <h4>解碼後車況</h4>
+  <pre id="out">(尚未收到資料)</pre>
+
+  <h4>診斷 Log(從上到下看卡在哪一步)</h4>
+  <pre id="log" style="background:#f4f4f4;padding:8px;max-height:260px;overflow:auto">(尚未開始)</pre>
+
+  <h4>原始封包(最新在最上面)</h4>
+  <pre id="raw">(尚未收到封包)</pre>
+
+  <script src="ccpa_decode.js"></script>
+  <script>
+    const SERVICE = "0000cc01-c3d5-40b4-ab51-611746a316f3";
+    const TX      = "0000cc03-c3d5-40b4-ab51-611746a316f3";
+    const RX      = "0000cc02-c3d5-40b4-ab51-611746a316f3"; // host -> esp(write)控制指令
+
+    let rxChar = null; // 連線後拿到,用來送控制指令(SHIFT,UP / SHIFT,DOWN …)
+    let commandedAssist = null; // 我們最後一次按的助力段位(這台車不回報段位,用它當畫面回饋)
+
+    const dec = new CcpaDecoder();
+    const td = new TextDecoder();
+    let buf = "";
+    let notifyCount = 0;
+
+    // ── 診斷 log:每個節點都記一筆,最新在最上面 ──────────────────────────
+    const logLines = [];
+    function log(msg) {
+      const t = new Date().toLocaleTimeString();
+      logLines.unshift(`[${t}] ${msg}`);
+      if (logLines.length > 300) logLines.length = 300;
+      document.getElementById("log").textContent = logLines.join("\n");
+    }
+
+    // ── 原始封包記錄 ────────────────────────────────────────────────────
+    const rawLines = [];
+    function showRaw(line) {
+      rawLines.unshift(line);
+      if (rawLines.length > 200) rawLines.length = 200;
+      document.getElementById("raw").textContent = rawLines.join("\n");
+    }
+
+    // 助力段位數值 → 模式名稱(對照韌體 assistModeName / PROTOCOL.md)
+    const ASSIST_NAMES = ["off", "eco", "eco+", "normal", "sport", "sport+"];
+    function assistText(lvl) {
+      if (lvl == null) return "--";                 // 無效/尚未收到
+      const name = ASSIST_NAMES[lvl];
+      return name ? `${lvl} (${name})` : String(lvl);
+    }
+
+    // ── 解碼後顯示 ──────────────────────────────────────────────────────
+    function show() {
+      const s = dec.snapshot();
+      document.getElementById("out").textContent =
+        "車速     : " + (s.speedKph        ?? "--") + " kph\n" +
+        "踏頻     : " + (s.cadenceRpm       ?? "--") + " rpm\n" +
+        "扭力     : " + (s.torqueNm         ?? "--") + " Nm\n" +
+        "馬達轉速 : " + (s.motorRpm         ?? "--") + " rpm\n" +
+        "馬達溫度 : " + (s.motorTempC       ?? "--") + " C\n" +
+        "助力段位 : " + assistText(s.assistLevel) +
+                        (commandedAssist !== null ? "  (你設定:" + assistText(commandedAssist) + ")" : "") + "\n" +
+        "電量     : " + (s.batterySocPct    ?? "--") + " %\n" +
+        "電壓     : " + (s.batteryVoltageMv ?? "--") + " mV\n" +
+        "電流     : " + (s.batteryCurrentMa ?? "--") + " mA\n" +
+        "電池溫度 : " + s.batteryTempsC.map(x => x ?? "--").join(", ") + " C\n" +
+        "後檔位   : " + (s.rearGear ? s.rearGear.index + "/" + s.rearGear.max : "--");
+    }
+
+    // ── 節點 ⑦⑧:收到 BLE → 切行 → 解析 → 解碼 ──────────────────────────
+    function onNotify(e) {
+      const bytes = e.target.value;            // DataView
+      const text = td.decode(bytes);
+      notifyCount++;
+      log(`⑦ 收到 BLE #${notifyCount}(${bytes.byteLength} bytes): ${JSON.stringify(text)}`);
+
+      buf += text;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!line) continue;
+        showRaw(line);
+
+        const f = CcpaDecoder.parseRawLine(line);
+        if (!f) { log(`⑧ ✗ 解析失敗(格式不符):${JSON.stringify(line)}`); continue; }
+        log(`⑧ 解析 OK:id=0x${f.id.toString(16).toUpperCase()} dlc=${f.dlc} data=[${f.data.map(b => b.toString(16).padStart(2, "0")).join(" ")}]`);
+
+        dec.feed(line);   // 解封包
+        show();           // 更新「解碼後車況」
+      }
+    }
+
+    // ── 節點 ①~⑥:連線過程 ──────────────────────────────────────────────
+    async function connect() {
+      const st = document.getElementById("status");
+      if (!navigator.bluetooth) {
+        st.textContent = "此瀏覽器不支援藍牙(iPhone 請用 Bluefy)";
+        log("✗ 此瀏覽器沒有 Web Bluetooth");
+        return;
+      }
+      try {
+        log("① 開始掃描…請在彈窗選 CCPA-Telemetry");
+        st.textContent = "掃描中…";
+        const dev = await navigator.bluetooth.requestDevice({
+          filters: [{ name: "CCPA-Telemetry" }], optionalServices: [SERVICE],
+        });
+        log(`② 已選裝置:${dev.name || dev.id}`);
+        dev.addEventListener("gattserverdisconnected", () => {
+          st.textContent = "已斷線"; log("✗ 裝置斷線");
+          rxChar = null;
+          if (recording) toggleRec(); // 斷線自動停記錄(資料保留,可下載)
+          setControlsEnabled(false);
+        });
+
+        log("③ 連線 GATT…");
+        const server = await dev.gatt.connect();
+        log("④ 取得服務(0000cc01…)");
+        const srv = await server.getPrimaryService(SERVICE);
+        log("⑤ 取得 TX 特徵(0000cc03…)");
+        const tx = await srv.getCharacteristic(TX);
+        log("⑥ 開啟 notify…");
+        await tx.startNotifications();
+        tx.addEventListener("characteristicvaluechanged", onNotify);
+
+        // 取得 RX 特徵(0000cc02…)以送控制指令,並開放控制按鈕
+        rxChar = await srv.getCharacteristic(RX);
+        setControlsEnabled(true);
+        log("⑥b 取得 RX 特徵(0000cc02…)→ 控制按鈕已開放");
+
+        st.textContent = "已連線";
+        log("✅ 訂閱成功!等板子送資料。若這之後一直沒『⑦』= 板子沒在送 = 沒收到 CAN(硬體那側)");
+      } catch (err) {
+        st.textContent = "連線失敗:" + err.message;
+        log("✗ 連線失敗:" + err.message);
+      }
+    }
+
+    // ── 送控制指令(寫入 RX 特徵 CC02)────────────────────────────────────
+    const enc = new TextEncoder();
+    async function sendCmd(cmd) {
+      if (!rxChar) { log("✗ 尚未連線,無法送指令"); return; }
+      try {
+        const bytes = enc.encode(cmd + "\n");
+        // 韌體 RX 支援 Write / Write-No-Response;優先用免回應(較快)
+        if (rxChar.writeValueWithoutResponse) await rxChar.writeValueWithoutResponse(bytes);
+        else await rxChar.writeValue(bytes);
+        log(`→ 已送指令:${cmd}`);
+      } catch (err) {
+        log("✗ 送指令失敗:" + err.message);
+      }
+    }
+
+    // 開放/鎖定所有控制按鈕(升降檔 + 助力段位),連線時一起切換
+    function setControlsEnabled(on) {
+      document.getElementById("shiftUpBtn").disabled = !on;
+      document.getElementById("shiftDownBtn").disabled = !on;
+      document.querySelectorAll(".assistBtn").forEach(b => { b.disabled = !on; });
+      document.getElementById("rawCmdInput").disabled = !on;
+      document.getElementById("rawCmdBtn").disabled = !on;
+      document.getElementById("recBtn").disabled = !on;
+    }
+
+    // 原始指令:把輸入框內容(例 "CAN,2940015,2,02,03")原封不動寫進 RX 送出。
+    function sendRawCmd() {
+      const cmd = document.getElementById("rawCmdInput").value.trim();
+      if (!cmd) { log("✗ 原始指令是空的"); return; }
+      sendCmd(cmd);
+    }
+
+    // ── 資料記錄:固定 5Hz 取樣目前解碼快照 → 存陣列 → 匯出 CSV ────────────
+    const REC_HZ = 5;                 // 每秒取樣筆數(0.2 秒一筆)
+    let recording = false;
+    let recTimer = null;
+    let recStart = 0;
+    let wakeLock = null;              // 記錄時防止螢幕休眠(不然計時器會被系統凍住)
+    const recRows = [];
+
+    function recSample() {
+      const now = new Date();
+      recRows.push({ iso: now.toISOString(), t: Date.now() - recStart,
+                     s: dec.snapshot(), aset: commandedAssist });
+      updateRecInfo();
+    }
+
+    function updateRecInfo() {
+      document.getElementById("recInfo").textContent =
+        (recording ? "● 記錄中… " : "已停止 ") + recRows.length + " 筆";
+      document.getElementById("dlBtn").disabled = recRows.length === 0;
+      document.getElementById("copyBtn").disabled = recRows.length === 0;
+    }
+
+    async function toggleRec() {
+      recording = !recording;
+      const btn = document.getElementById("recBtn");
+      if (recording) {
+        recRows.length = 0;                    // 每次開始 = 全新一段
+        recStart = Date.now();
+        recTimer = setInterval(recSample, Math.round(1000 / REC_HZ));
+        btn.textContent = "⏹ 停止記錄";
+        try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+        log("⏺ 開始記錄(" + REC_HZ + " Hz)");
+      } else {
+        clearInterval(recTimer); recTimer = null;
+        try { if (wakeLock) await wakeLock.release(); } catch (e) {}
+        wakeLock = null;
+        btn.textContent = "⏺ 開始記錄";
+        log("⏹ 停止記錄,共 " + recRows.length + " 筆");
+      }
+      updateRecInfo();
+    }
+
+    function buildCsv() {
+      const head = ["time_iso", "t_ms", "speed_kph", "cadence_rpm", "torque_nm",
+        "motor_rpm", "motor_temp_c", "assist_report", "assist_set", "soc_pct",
+        "voltage_mv", "current_ma", "bat_t0", "bat_t1", "bat_t2", "bat_t3",
+        "gear_index", "gear_max"];
+      const v = x => (x === null || x === undefined) ? "" : x;
+      const rows = [head.join(",")];
+      for (const r of recRows) {
+        const s = r.s, t = s.batteryTempsC || [];
+        rows.push([r.iso, r.t, v(s.speedKph), v(s.cadenceRpm), v(s.torqueNm),
+          v(s.motorRpm), v(s.motorTempC), v(s.assistLevel), v(r.aset), v(s.batterySocPct),
+          v(s.batteryVoltageMv), v(s.batteryCurrentMa), v(t[0]), v(t[1]), v(t[2]), v(t[3]),
+          s.rearGear ? s.rearGear.index : "", s.rearGear ? s.rearGear.max : ""].join(","));
+      }
+      return rows.join("\n");
+    }
+
+    function tsName() {
+      const d = new Date(), p = n => String(n).padStart(2, "0");
+      return `ccpa_ride_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+             `_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.csv`;
+    }
+
+    function downloadCsv() {
+      const csv = "﻿" + buildCsv();  // BOM:Excel 開中文才不亂碼
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = tsName();
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      log("⬇ 已匯出 " + recRows.length + " 筆 → " + a.download);
+    }
+
+    async function copyCsv() {
+      try { await navigator.clipboard.writeText(buildCsv()); log("📋 已複製 CSV(可貼到記事本/Excel)"); }
+      catch (e) { log("✗ 複製失敗(iPhone 可能不支援,改用下載):" + e.message); }
+    }
+
+    document.getElementById("recBtn").addEventListener("click", toggleRec);
+    document.getElementById("dlBtn").addEventListener("click", downloadCsv);
+    document.getElementById("copyBtn").addEventListener("click", copyCsv);
+
+    document.getElementById("shiftUpBtn").addEventListener("click", () => sendCmd("SHIFT,UP"));
+    document.getElementById("shiftDownBtn").addEventListener("click", () => sendCmd("SHIFT,DOWN"));
+
+    // 助力段位:按下 → 送 "ASSIST,<level>"(韌體 control_set_assist_level 收 0~5)
+    document.querySelectorAll(".assistBtn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        commandedAssist = parseInt(btn.dataset.level, 10); // 記住設定值,顯示在畫面上當回饋
+        sendCmd("ASSIST," + btn.dataset.level);
+        show(); // 馬上更新畫面(不用等下一包)
+      });
+    });
+
+    // 原始指令:按「送出」或在輸入框按 Enter 都送
+    document.getElementById("rawCmdBtn").addEventListener("click", sendRawCmd);
+    document.getElementById("rawCmdInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendRawCmd();
+    });
+
+    document.getElementById("connectBtn").addEventListener("click", connect);
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      rawLines.length = 0; logLines.length = 0; notifyCount = 0;
+      document.getElementById("raw").textContent = "(尚未收到封包)";
+      document.getElementById("log").textContent = "(已清空)";
+    });
+  </script>
+</body>
+</html>

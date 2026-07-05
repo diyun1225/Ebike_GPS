@@ -1,5 +1,6 @@
 import { useState } from "react";
 import HomeScreen from "./HomeScreen.jsx";
+import NormalMode from "./modes/normal/NormalMode.jsx";
 import NavigationMode from "./modes/navigation/NavigationMode.jsx";
 import HeartRateMode from "./modes/heartrate/HeartRateMode.jsx";
 
@@ -9,10 +10,15 @@ export default function App() {
 
   const backToHome = () => setMode(null);
 
+  if (mode === "normal") return <NormalMode onBack={backToHome} />;
   if (mode === "navigation") return <NavigationMode onBack={backToHome} />;
   if (mode === "heartrate") return <HeartRateMode onBack={backToHome} />;
   if (mode === "suspension")
     return <ComingSoon title="智慧避震模式" icon="🔧" onBack={backToHome} />;
+  if (mode === "assist")
+    return <ComingSoon title="智慧輔助模式" icon="💪" onBack={backToHome} />;
+  if (mode === "shift")
+    return <ComingSoon title="智慧變速模式" icon="⚙️" onBack={backToHome} />;
   return <HomeScreen onSelect={setMode} />;
 }
 

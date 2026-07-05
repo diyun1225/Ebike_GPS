@@ -95,6 +95,7 @@ export default function NavigationMode({ onBack }) {
   const [summary, setSummary] = useState(null);
   const [status, setStatus] = useState({ msg: "", error: false });
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false); // 取得目前位置中
   const [riding, setRiding] = useState(false);
 
   const weightRef = useRef(70 + BIKE_KG); // 規劃時鎖定的總載重
@@ -525,6 +526,43 @@ export default function NavigationMode({ onBack }) {
     if (fit) mapRef.current.fitBounds(bounds); // 拖曳微調時不重新框，保留使用者目前視角
   }
 
+  // 取得目前位置 → 反查地址 → 填進起點（第一個 stop）
+  function fillCurrentLocation() {
+    if (!navigator.geolocation) {
+      setStatus({ msg: "此裝置不支援定位", error: true });
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        const { latitude, longitude } = p.coords;
+        const coordStr = `${latitude},${longitude}`;
+        const apply = (text) => {
+          setStops((prev) => prev.map((s, i) => (i === 0 ? text : s)));
+          setLocating(false);
+        };
+        // 有 google 就反查成可讀地址，否則直接用座標（Directions 也吃座標字串）
+        if (google) {
+          new google.maps.Geocoder().geocode(
+            { location: { lat: latitude, lng: longitude } },
+            (res, st) =>
+              apply(st === "OK" && res?.[0] ? res[0].formatted_address : coordStr)
+          );
+        } else {
+          apply(coordStr);
+        }
+      },
+      (err) => {
+        setLocating(false);
+        setStatus({
+          msg: err.code === 1 ? "需要定位權限才能用目前位置" : "定位失敗，請再試一次",
+          error: true,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
   // 由「規劃路線」按鈕觸發：用表單的地名查路線，成功後進入預覽階段
   async function planRoute() {
     const pts = stops.map((s) => s.trim()).filter(Boolean);
@@ -706,6 +744,8 @@ export default function NavigationMode({ onBack }) {
             setCargo={setCargo}
             ready={!!google}
             loading={loading}
+            locating={locating}
+            onUseCurrentLocation={fillCurrentLocation}
             status={loadError ? { msg: loadError, error: true } : status}
             onPlan={planRoute}
           />

@@ -1,5 +1,5 @@
 // 進入電量管理模式的第一步：先填路線與重量（此時不顯示地圖），
-// 風格對齊心率模式的設定表單。按「規劃路線」後才會跑出地圖。
+// 風格對齊心肺模式的設定表單。按「規劃路線」後才會跑出地圖。
 export default function RouteForm({
   stops,
   setStops,
@@ -9,6 +9,8 @@ export default function RouteForm({
   setCargo,
   ready,
   loading,
+  locating,
+  onUseCurrentLocation,
   status,
   onPlan,
 }) {
@@ -43,6 +45,17 @@ export default function RouteForm({
                 onChange={(e) => setStop(i, e.target.value)}
                 placeholder={isFirst ? "起點" : isLast ? "目的地" : "途經點"}
               />
+              {isFirst && (
+                <button
+                  type="button"
+                  className="rs-here"
+                  onClick={onUseCurrentLocation}
+                  disabled={locating}
+                  aria-label="使用目前位置"
+                >
+                  {locating ? "定位中…" : "📍目前位置"}
+                </button>
+              )}
               {stops.length > 2 && (
                 <button
                   className="rs-del"

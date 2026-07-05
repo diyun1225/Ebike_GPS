@@ -2,13 +2,25 @@
 // 新增模式時，在這個陣列加一筆、再到 App.jsx 接上對應元件即可。
 // id 是「路由用」的代號（不要亂改，App.jsx 靠它切換）；圖是 Canva 做好的按鈕（圓圈+icon+文字都在裡面）。
 import { useState } from "react";
+import normalImg from "./assets/mode-normal.png";
 import batteryImg from "./assets/mode-battery.png";
 import heartImg from "./assets/mode-heart.png";
 import suspensionImg from "./assets/mode-suspension.png";
+import assistImg from "./assets/mode-assist.png";
+import shiftImg from "./assets/mode-shift.png";
 import bgImg from "./assets/bg-home.png";
 
 // labelBelow: 圖片本身沒有烤文字，需由程式在圖下方補上 label
 const MODES = [
+  {
+    id: "normal",
+    label: "一般模式",
+    img: normalImg,
+    accent: "#3a7d55", // 車圖的深綠
+    flood: "#eef6f1",
+    labelBelow: true,
+    enabled: true,
+  },
   {
     id: "navigation",
     label: "電量管理模式",
@@ -20,7 +32,7 @@ const MODES = [
   },
   {
     id: "heartrate",
-    label: "心率模式",
+    label: "心肺模式",
     img: heartImg,
     accent: "#ff3b5c",
     flood: "#fdeef0",
@@ -33,6 +45,24 @@ const MODES = [
     img: suspensionImg,
     accent: "#2f8fd0",
     flood: "#eef9fb",
+    labelBelow: true,
+    enabled: true,
+  },
+  {
+    id: "assist",
+    label: "智慧輔助模式",
+    img: assistImg,
+    accent: "#f5a623", // 馬達上的閃電色
+    flood: "#fbf7ea", // 跟 icon 圓底的米色一致
+    labelBelow: true,
+    enabled: true,
+  },
+  {
+    id: "shift",
+    label: "智慧變速模式",
+    img: shiftImg,
+    accent: "#5ab172", // 上下箭頭的綠
+    flood: "#eef7f0",
     labelBelow: true,
     enabled: true,
   },
@@ -98,7 +128,11 @@ export default function HomeScreen({ onSelect }) {
             }}
             onClick={(e) => choose(e, m)}
           >
-            <img className="orb-img" src={m.img} alt={m.label} draggable="false" />
+            {m.img ? (
+              <img className="orb-img" src={m.img} alt={m.label} draggable="false" />
+            ) : (
+              <span className="orb-emoji" aria-hidden="true">{m.emoji}</span>
+            )}
             {m.labelBelow && <span className="orb-label">{m.label}</span>}
           </button>
         ))}

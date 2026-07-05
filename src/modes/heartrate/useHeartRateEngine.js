@@ -1,20 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { zoneFromHr, decide, nextMotorPct, RAMP_INTERVAL_MS } from "./decision.js";
+import { zoneFromHr, decide, nextGear, RAMP_INTERVAL_MS } from "./decision.js";
+import { gearToAssistFrame } from "./canFrame.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rand = (a, b) => Math.random() * (b - a) + a;
 
-// 心率模式引擎：模擬「每秒一筆生理訊號」並跑流程圖的判定
-// 之後可把 stateRef 裡的 hr/rr 換成真實感測器（心跳帶 / 呼吸帶）資料
+// 沒有真實感測器時，用這個固定強度(0~1)驅動模擬。
+// 之後接上心跳帶 / 呼吸帶，就把下面的 hr / rr 換成感測器實測值即可。
+const RIDE_EFFORT = 0.4;
+
+// 心肺模式引擎：模擬「每秒一筆生理訊號」並跑流程圖的判定
 export function useHeartRateEngine(base) {
   const [live, setLive] = useState(null);
-  const effortRef = useRef(0.35); // 0~1：騎士當下出力（驅動心率 / 呼吸）
   const stateRef = useRef(null);
-
-  // 外部用按鈕調整出力強度
-  const setEffort = (e) => {
-    effortRef.current = clamp(e, 0, 1);
-  };
 
   useEffect(() => {
     if (!base) return;
@@ -24,7 +22,7 @@ export function useHeartRateEngine(base) {
       rr: 16,
       rrHist: [], // 每秒一筆 RR，用來算 5 秒內變化量
       rrHighDur: 0, // RR > 25 已持續幾秒
-      motorPct: 20,
+      gear: 1, // 目前輔助力段數
       tick: 0,
     };
 
@@ -32,7 +30,7 @@ export function useHeartRateEngine(base) {
       const s = stateRef.current;
       s.tick++;
       const fullSecond = s.tick % 2 === 0; // 500ms 迴圈：每 2 tick = 1 秒
-      const effort = effortRef.current;
+      const effort = RIDE_EFFORT;
 
       if (fullSecond) {
         // 心率朝目標靠攏（有生理延遲），目標 = 安靜 + 出力 × HRR
@@ -56,10 +54,10 @@ export function useHeartRateEngine(base) {
       const past = hist.length ? hist[0] : s.rr;
       const dRR = s.rr - past;
 
-      // 區間判定 + 決策 + 馬達更新（每 0.5 秒）
+      // 區間判定 + 決策 + 段數更新（每 0.5 秒）
       const zone = zoneFromHr(s.hr, base);
       const dir = decide({ zone, rr: s.rr, dRR, rrHighDur: s.rrHighDur });
-      s.motorPct = nextMotorPct(s.motorPct, dir);
+      s.gear = nextGear(s.gear, dir);
 
       setLive({
         hr: Math.round(s.hr),
@@ -70,15 +68,14 @@ export function useHeartRateEngine(base) {
         intensity: (s.hr - base.restingHr) / base.hrr,
         state: dir.state,
         note: dir.note,
-        motor: dir.motor,
-        motorMode: dir.motorMode,
-        motorPct: Math.round(s.motorPct),
-        effort,
+        mode: dir.mode,
+        gear: s.gear, // 輔助力段數 1~5，6=無
+        can: gearToAssistFrame(s.gear), // 送出用的 CAN 封包（系統實際輸出）
       });
     }, RAMP_INTERVAL_MS);
 
     return () => clearInterval(id);
   }, [base]);
 
-  return { live, setEffort };
+  return { live };
 }

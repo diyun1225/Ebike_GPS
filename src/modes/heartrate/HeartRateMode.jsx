@@ -38,17 +38,16 @@ function RingGauge({ value, min, max, color, icon, beatDur, num, unit, sub }) {
   );
 }
 
-// 輔助力檔位：階梯式分段（像排檔）
-function GearBar({ pct, label, color }) {
+// 輔助力段數：階梯式分段（像排檔）。gear 1~5，6=無輔助
+function GearBar({ gear, color }) {
   const total = 5;
-  const on = clamp(Math.round(pct / (100 / total)), 0, total);
+  const isNone = gear === 6;
+  const on = isNone ? 0 : clamp(gear, 0, total);
   return (
     <div className="hr-gear">
       <div className="hr-gear-head">
-        <span>輔助力檔位</span>
-        <b style={{ color }}>
-          {label} · {pct}%
-        </b>
+        <span>輔助力段數</span>
+        <b style={{ color }}>{isNone ? "無輔助" : `${gear} 段`}</b>
       </div>
       <div className="hr-gear-bars">
         {Array.from({ length: total }).map((_, i) => (
@@ -65,13 +64,6 @@ function GearBar({ pct, label, color }) {
     </div>
   );
 }
-
-// Demo 情境：直接對應三種燈號狀態（值≈%HRR 強度）
-const EFFORTS = [
-  { id: "low", label: "狀態A", value: 0.33 }, // 藍燈 HR_LOW
-  { id: "high", label: "狀態B", value: 0.5 }, // 綠燈 HR_HIGH
-  { id: "max", label: "狀態C", value: 0.75 }, // 橘燈 HR_MAX
-];
 
 // 進入畫面：先建立個人化基準線
 function BaselineForm({ onStart }) {
@@ -177,7 +169,7 @@ function ZoneBar({ live }) {
   );
 }
 
-function Dashboard({ base, live, onEffort }) {
+function Dashboard({ base, live }) {
   const z = live.zone;
   // 愛心跳動週期＝60/心率（越快跳越快）；呼吸 icon 週期＝60/呼吸率
   const beatDur = `${(60 / clamp(live.hr, 40, 200)).toFixed(2)}s`;
@@ -219,26 +211,8 @@ function Dashboard({ base, live, onEffort }) {
 
       <ZoneBar live={live} />
 
-      {/* 輔助力檔位 */}
-      <GearBar pct={live.motorPct} label={live.motor.label} color={z.color} />
-
-      {/* Demo：模擬不同騎乘強度，方便展示三種燈號狀態（非正式功能） */}
-      <div className="hr-demo">
-        <div className="hr-demo-label">Demo模擬不同強度</div>
-        <div className="hr-efforts">
-          {EFFORTS.map((e) => (
-            <button
-              key={e.id}
-              className={`hr-effort ${
-                Math.abs(live.effort - e.value) < 0.06 ? "on" : ""
-              }`}
-              onClick={() => onEffort(e.value)}
-            >
-              {e.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* 輔助力段數 */}
+      <GearBar gear={live.gear} color={z.color} />
     </>
   );
 }
@@ -246,7 +220,7 @@ function Dashboard({ base, live, onEffort }) {
 export default function HeartRateMode({ onBack }) {
   const [base, setBase] = useState(null);
   const [confirmExit, setConfirmExit] = useState(false); // 返回確認視窗
-  const { live, setEffort } = useHeartRateEngine(base);
+  const { live } = useHeartRateEngine(base);
 
   return (
     <div
@@ -262,17 +236,15 @@ export default function HeartRateMode({ onBack }) {
       </button>
 
       {!base && <BaselineForm onStart={setBase} />}
-      {base && live && (
-        <Dashboard base={base} live={live} onEffort={setEffort} />
-      )}
+      {base && live && <Dashboard base={base} live={live} />}
 
-      <h1 className="hr-header">心率模式</h1>
+      <h1 className="hr-header">心肺模式</h1>
 
       {confirmExit && (
         <div className="hr-modal-backdrop" onClick={() => setConfirmExit(false)}>
           <div className="hr-modal" onClick={(e) => e.stopPropagation()}>
             <div className="hr-modal-icon">🚪</div>
-            <h3>確定要離開心率模式？</h3>
+            <h3>確定要離開心肺模式？</h3>
             <div className="hr-modal-actions">
               <button
                 className="hr-modal-cancel"

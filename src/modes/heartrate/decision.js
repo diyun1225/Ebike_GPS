@@ -1,13 +1,11 @@
-// 心率模式決策邏輯（對應流程圖）
+// 心肺模式決策邏輯（對應流程圖）
 // 全部是純函式，方便之後單獨測試 / 替換成真實感測器資料
 
-// 馬達輸出檔位
-export const MOTOR = {
-  LV_LOW: { id: "LV_LOW", pct: 20, label: "LV_LOW" },
-  LV_MED: { id: "LV_MED", pct: 50, label: "LV_MED" },
-  LV_HIGH: { id: "LV_HIGH", pct: 80, label: "LV_HIGH" },
-  LV_BOOST: { id: "LV_BOOST", pct: 80, label: "LV_BOOST" },
-};
+// 輔助力段數：1(最低) ~ 5(最高)，6 = 無輔助
+export const GEAR_NONE = 6;
+// 段數 → 實際出力大小（無=0 最小），給漸進/退檔排序用
+const power = (gear) => (gear === GEAR_NONE ? 0 : gear); // 0~5
+const gearFromPower = (p) => (p <= 0 ? GEAR_NONE : Math.min(5, p));
 
 // 三個心率區間（車錶燈色）
 export const ZONES = {
@@ -55,20 +53,19 @@ const breathSteady = (rr, dRR) => rr >= 15 && rr <= 25 && Math.abs(dRR) < 3;
 const breathSurge = (dRR) => dRR >= 5; // 突增：ΔRR ≥ +5 次/5 秒
 const breathHigh = (rr, highDur) => rr > 25 && highDur > 5; // 偏高且維持 > 5 秒
 
-// 退檔速率限制：每 0.5 秒減少 5% 動力
-export const RAMP_STEP = 5; // %
 export const RAMP_INTERVAL_MS = 500;
 
-// 主決策：依「區間 + 呼吸」決定狀態與馬達指令
-//   motorMode: 'hold' 直接到 target | 'spike' 瞬間爆發 | 'rampDown' 平滑退檔 | 'min80' 維持 ≥80%
+// 主決策：依「區間 + 呼吸」決定狀態與目標輔助力段數
+//   targetGear: 目標段數（1~5，6=無）
+//   mode: 'hold' 平滑趨近 | 'spike' 瞬間拉滿 | 'rampDown' 一次退一段 | 'min' 維持 ≥ 目標
 export function decide({ zone, rr, dRR, rrHighDur }) {
-  // 狀態 C：HR_MAX → 安全防護（不看呼吸，強制維持高輔助）
+  // 狀態 C：HR_MAX → 安全防護（不看呼吸，強制維持最高段）
   if (zone.id === "MAX") {
     return {
       state: "安全防護",
-      note: "騎士負載極大，維持高輔助或強制介入",
-      motor: MOTOR.LV_HIGH,
-      motorMode: "min80",
+      note: "騎士負載極大，維持最高段(5)或強制介入",
+      targetGear: 5,
+      mode: "min",
     };
   }
 
@@ -77,60 +74,71 @@ export function decide({ zone, rr, dRR, rrHighDur }) {
     if (breathSurge(dRR)) {
       return {
         state: "短暫爆發",
-        note: "呼吸突增，馬達瞬間 80%",
-        motor: MOTOR.LV_BOOST,
-        motorMode: "spike",
+        note: "呼吸突增，瞬間拉到最高段(5)",
+        targetGear: 5,
+        mode: "spike",
       };
     }
     if (breathHigh(rr, rrHighDur)) {
       return {
         state: "高負載",
-        note: "呼吸偏高且持續，馬達持續 80%",
-        motor: MOTOR.LV_HIGH,
-        motorMode: "hold",
+        note: "呼吸偏高且持續，維持第 4 段",
+        targetGear: 4,
+        mode: "hold",
       };
     }
     if (breathSteady(rr, dRR)) {
       return {
         state: "恢復期",
-        note: "呼吸回穩，平滑退檔 80% → 50%",
-        motor: MOTOR.LV_MED,
-        motorMode: "rampDown",
+        note: "呼吸回穩，平滑退檔至第 2 段",
+        targetGear: 2,
+        mode: "rampDown",
       };
     }
-    // 區間內未觸發特定條件 → 維持高負載
+    // 區間內未觸發特定條件 → 維持中段
     return {
       state: "高負載",
-      note: "維持輔助",
-      motor: MOTOR.LV_HIGH,
-      motorMode: "hold",
+      note: "維持第 3 段輔助",
+      targetGear: 3,
+      mode: "hold",
     };
   }
 
   // 狀態 A：HR_LOW → 基礎騎行
+  if (breathSteady(rr, dRR)) {
+    return {
+      state: "基礎騎行",
+      note: "呼吸平穩，輕鬆巡航不輔助",
+      targetGear: GEAR_NONE,
+      mode: "hold",
+    };
+  }
   return {
     state: "基礎騎行",
-    note: breathSteady(rr, dRR) ? "呼吸平穩，基礎輔助" : "低強度巡航",
-    motor: MOTOR.LV_LOW,
-    motorMode: "hold",
+    note: "低強度巡航，第 1 段輔助",
+    targetGear: 1,
+    mode: "hold",
   };
 }
 
-// 依指令更新目前馬達輸出（每 0.5 秒呼叫一次）
-export function nextMotorPct(prev, dir) {
-  switch (dir.motorMode) {
+// 依指令更新目前輔助力段數（每 0.5 秒呼叫一次），在「出力大小」空間漸進
+export function nextGear(prevGear, dir) {
+  const cur = power(prevGear);
+  const tgt = power(dir.targetGear);
+  let next;
+  switch (dir.mode) {
     case "spike":
-      return 80; // 瞬間爆發
+      next = tgt; // 瞬間拉到目標
+      break;
+    case "min":
+      next = Math.max(cur, tgt); // 維持 ≥ 目標
+      break;
     case "rampDown":
-      return Math.max(MOTOR.LV_MED.pct, prev - RAMP_STEP); // -5%/0.5s 至 50%
-    case "min80":
-      return Math.max(80, prev); // 維持 ≥ 80%
+      next = Math.max(tgt, cur - 1); // 一次退一段
+      break;
     case "hold":
-    default: {
-      const target = dir.motor.pct;
-      if (prev < target) return Math.min(target, prev + 10);
-      if (prev > target) return Math.max(target, prev - 10);
-      return target;
-    }
+    default:
+      next = cur < tgt ? cur + 1 : cur > tgt ? cur - 1 : tgt; // 平滑趨近，一次一段
   }
+  return gearFromPower(next);
 }
