@@ -39,9 +39,13 @@ export function useBleTelemetry() {
   const [rawLines, setRawLines] = useState([]); // 原始封包（最新在最上面）
   const [canControl, setCanControl] = useState(false); // 是否能送控制指令（有 RX 特徵）
   const [commandedAssist, setCommandedAssist] = useState(null); // 最後一次設定的助力段位（畫面回饋）
+  const [commandedSuspension, setCommandedSuspension] = useState(null); // 最後一次設定的避震段（畫面回饋，暫無遙測）
+  const [isDemo, setIsDemo] = useState(false); // 是否在跑「模擬資料」（沒真車時預覽畫面用）
 
   const connRef = useRef(null);
   const ackWaitersRef = useRef([]); // 等待 MODEACK 的 promise resolver 清單
+  const demoRef = useRef(null); // 模擬資料的計時器 id
+  const demoAssistRef = useRef(3); // 模擬時的助力段位（讓按段位鈕看得到變化）
 
   // 高速資料先進這些 ref（notify handler 只做這件事，不碰 React）
   const logBufRef = useRef([]);
@@ -137,6 +141,12 @@ export function useBleTelemetry() {
   }, [startFlush, stopFlush]);
 
   const disconnect = useCallback(() => {
+    // 若在跑模擬資料，一併停掉
+    if (demoRef.current != null) {
+      clearInterval(demoRef.current);
+      demoRef.current = null;
+    }
+    setIsDemo(false);
     connRef.current?.disconnect();
     connRef.current = null;
     setPhase("idle");
@@ -151,6 +161,57 @@ export function useBleTelemetry() {
     ackWaitersRef.current = [];
     stopFlush();
   }, [stopFlush]);
+
+  // 停掉模擬資料
+  const stopDemo = useCallback(() => {
+    if (demoRef.current != null) {
+      clearInterval(demoRef.current);
+      demoRef.current = null;
+    }
+    setIsDemo(false);
+  }, []);
+
+  // 開始模擬資料：不連真車，用假的遙測快照餵給所有模式（純預覽畫面用）。
+  // 值會平滑變動（sin 波 + 小抖動），連疲勞值也一起給，讓一般/心肺模式都活起來。
+  const startDemo = useCallback(() => {
+    if (demoRef.current != null) return;
+    setError(null);
+    setPhase("connected");
+    setStatus("模擬資料");
+    setCanControl(true);
+    setIsDemo(true);
+    demoAssistRef.current = 3;
+    setCommandedAssist(3);
+
+    let t = 0;
+    const wave = (period, amp, base) =>
+      base + amp * Math.sin((t / period) * Math.PI * 2);
+    const jit = (n) => (Math.random() - 0.5) * n; // 小抖動，看起來像真的
+    const gen = () => {
+      t += 1;
+      const speed = Math.max(0, wave(24, 9, 22) + jit(1.5));
+      const fatigue = Math.max(0, Math.min(100, Math.round(wave(80, 30, 45))));
+      const fatigueAdvice =
+        fatigue >= 70 ? "已進入疲勞區，建議放慢或休息" : fatigue >= 40 ? "強度偏高，注意配速" : "";
+      setData({
+        speedKph: +speed.toFixed(1),
+        cadenceRpm: Math.max(0, Math.round(wave(18, 22, 74) + jit(3))),
+        torqueNm: +Math.max(0, wave(16, 12, 18) + jit(2)).toFixed(1),
+        motorRpm: Math.max(0, Math.round(wave(20, 320, 1500) + jit(40))),
+        motorTempC: Math.round(wave(120, 8, 47)),
+        assistLevel: demoAssistRef.current,
+        batterySocPct: Math.max(5, Math.round(82 - t / 25)),
+        batteryVoltageMv: Math.round(wave(60, 700, 36500)),
+        batteryCurrentMa: Math.max(0, Math.round(wave(16, 4000, 8000) + jit(500))),
+        batteryTempsC: [Math.round(wave(90, 3, 32)), Math.round(wave(110, 3, 33))],
+        rearGear: { index: 1 + (Math.floor(t / 8) % 7), max: 7 },
+        fatigue,
+        fatigueAdvice,
+      });
+    };
+    gen(); // 立刻先給一筆，不用等 500ms
+    demoRef.current = setInterval(gen, 500);
+  }, []);
 
   // 送一行控制指令；失敗只記到診斷 log，不中斷連線
   const sendCommand = useCallback(async (cmd) => {
@@ -184,7 +245,19 @@ export function useBleTelemetry() {
   const setAssist = useCallback(
     (level) => {
       setCommandedAssist(level); // 這台車不回報段位，用它當畫面回饋
+      demoAssistRef.current = level; // 模擬模式下讓 assistLevel 也跟著變
       sendCommand("ASSIST," + level);
+    },
+    [sendCommand]
+  );
+
+  // 避震軟硬 0~5（0 最軟、5 最硬）。
+  // TODO(韌體)：沿用 SHIFT/ASSIST 的字串指令慣例送 "SUSP,<0-5>"，待 AI 板加上
+  //   對應處理後即生效；車輛也尚未回報避震狀態，故畫面用 commandedSuspension 回饋。
+  const setSuspension = useCallback(
+    (level) => {
+      setCommandedSuspension(level);
+      sendCommand("SUSP," + level);
     },
     [sendCommand]
   );
@@ -193,6 +266,7 @@ export function useBleTelemetry() {
   useEffect(() => {
     return () => {
       stopFlush();
+      if (demoRef.current != null) clearInterval(demoRef.current);
       connRef.current?.disconnect();
     };
   }, [stopFlush]);
@@ -209,10 +283,15 @@ export function useBleTelemetry() {
     clearLog,
     canControl,
     commandedAssist,
+    commandedSuspension,
     sendCommand,
     waitForModeAck,
     shiftUp,
     shiftDown,
     setAssist,
+    setSuspension,
+    isDemo,
+    startDemo,
+    stopDemo,
   };
 }

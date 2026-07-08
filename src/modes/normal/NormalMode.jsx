@@ -56,6 +56,34 @@ function Controls({ commandedAssist, onShiftUp, onShiftDown, onSetAssist }) {
   );
 }
 
+// 目前疲勞度：0~100 進度條，依高低換色與文字。
+// 數值來自 BLE telemetry 的 data.fatigue（組員之後於韌體/解碼器補上）；沒有時顯示「—」。
+function FatigueBar({ value, tip }) {
+  const has = value != null && !Number.isNaN(value);
+  const pct = has ? Math.max(0, Math.min(100, Math.round(value))) : 0;
+  const color = pct < 40 ? "#2fa860" : pct < 70 ? "#f5a623" : "#e0533d";
+  const label = !has ? "—" : pct < 40 ? "良好" : pct < 70 ? "偏高" : "疲勞";
+  const msg = tip?.trim();
+  return (
+    <div className="nm-fatigue">
+      <div className="nm-fatigue-head">
+        <span>目前疲勞度</span>
+        <b style={has ? { color } : null}>{has ? `${pct}%・${label}` : "—"}</b>
+      </div>
+      <div className="nm-fatigue-track">
+        <span
+          className="nm-fatigue-fill"
+          style={{ width: `${pct}%`, background: color }}
+        />
+      </div>
+      {/* 一句話提醒：內容由組員輸出填入 data.fatigueAdvice；沒有時保留空間 */}
+      <div className={`nm-fatigue-tip ${msg ? "" : "empty"}`} style={msg ? { color } : null}>
+        {msg || "—"}
+      </div>
+    </div>
+  );
+}
+
 // 助力等級（0~5）階梯段位
 function AssistBar({ level }) {
   const total = 5;
@@ -114,6 +142,9 @@ function Dashboard({ data }) {
 
       {/* 助力等級 */}
       <AssistBar level={d.assistLevel} />
+
+      {/* 目前疲勞度（組員藍牙傳來的 data.fatigue） */}
+      <FatigueBar value={d.fatigue} tip={d.fatigueAdvice} />
 
       {/* 其餘數據卡 */}
       <div className="nm-grid">

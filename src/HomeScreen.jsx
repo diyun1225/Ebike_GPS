@@ -114,16 +114,31 @@ export default function HomeScreen({ onSelect, pending }) {
       <div className={`home-ble ${connected ? "on" : ""}`}>
         <span className={`home-ble-dot ${connected ? "on" : ""}`} />
         <span className="home-ble-txt">
-          {connected ? "自行車已連線" : "自行車未連線"}
+          {ble.isDemo
+            ? "模擬資料中"
+            : connected
+            ? "自行車已連線"
+            : "自行車未連線"}
         </span>
-        {!connected && (
-          <button
-            className="home-ble-btn"
-            onClick={ble.connect}
-            disabled={ble.phase === "connecting"}
-          >
-            {ble.phase === "connecting" ? "連線中…" : "連線"}
+        {ble.isDemo ? (
+          <button className="home-ble-btn ghost" onClick={ble.stopDemo}>
+            停止
           </button>
+        ) : (
+          !connected && (
+            <>
+              <button
+                className="home-ble-btn"
+                onClick={ble.connect}
+                disabled={ble.phase === "connecting"}
+              >
+                {ble.phase === "connecting" ? "連線中…" : "連線"}
+              </button>
+              <button className="home-ble-btn ghost" onClick={ble.startDemo}>
+                模擬
+              </button>
+            </>
+          )
         )}
       </div>
 

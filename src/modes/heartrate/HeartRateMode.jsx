@@ -1,10 +1,41 @@
 import { useState } from "react";
 import { computeBaseline } from "./decision.js";
 import { useHeartRateEngine } from "./useHeartRateEngine.js";
+import { useBle } from "../../ble/BleContext.jsx";
 import heartIcon from "../../assets/icon-heart.png";
 import lungsIcon from "../../assets/icon-lungs.png";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// 沒有數值時統一顯示破折號
+const fmt = (v, digits = 0) =>
+  v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(digits);
+
+// 車輛數據（車速為主 + 踏頻/電量/馬達溫度）。數值來自共用 BLE telemetry，
+// 沒連線時顯示「—」。連線在主畫面做，這裡只讀資料。
+function TeleGrid({ data }) {
+  const d = data || {};
+  return (
+    <div className="hr-tele">
+      <div className="hr-tele-speed">
+        <b>{fmt(d.speedKph, 1)}</b>
+        <span>km/h・車速</span>
+      </div>
+      <div className="hr-tele-grid">
+        <div className="hr-tele-card">
+          <span className="hr-tele-label">踏頻</span>
+          <b className="hr-tele-value">{fmt(d.cadenceRpm)}<small> rpm</small></b>
+        </div>
+        <div className="hr-tele-card">
+          <span className="hr-tele-label">電池電量</span>
+          <b className="hr-tele-value">
+            {d.batterySocPct == null ? "—" : `${d.batterySocPct}%`}
+          </b>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // 圓圈儀表：環形進度 + 中央會「呼吸/跳動」的 icon + 數值
 function RingGauge({ value, min, max, color, icon, beatDur, num, unit, sub }) {
@@ -38,16 +69,21 @@ function RingGauge({ value, min, max, color, icon, beatDur, num, unit, sub }) {
   );
 }
 
-// 輔助力段數：階梯式分段（像排檔）。gear 1~5，6=無輔助
+// 輔助力段數對應的模式名稱：index = 段位，0=Off
+const ASSIST_LABELS = ["Off", "Eco", "Eco+", "Normal", "Sport", "Sport+"];
+
+// 輔助力段數：階梯式分段（像排檔）。gear 1~5，6=無輔助（顯示為 0 Off）
 function GearBar({ gear, color }) {
   const total = 5;
-  const isNone = gear === 6;
-  const on = isNone ? 0 : clamp(gear, 0, total);
+  const level = gear === 6 ? 0 : clamp(gear, 0, total); // 6=無輔助 → 顯示 0
+  const on = level;
   return (
     <div className="hr-gear">
       <div className="hr-gear-head">
         <span>輔助力段數</span>
-        <b style={{ color }}>{isNone ? "無輔助" : `${gear} 段`}</b>
+        <b style={{ color }}>
+          {level}：{ASSIST_LABELS[level]}
+        </b>
       </div>
       <div className="hr-gear-bars">
         {Array.from({ length: total }).map((_, i) => (
@@ -60,29 +96,6 @@ function GearBar({ gear, color }) {
             }}
           />
         ))}
-      </div>
-    </div>
-  );
-}
-
-// 目前疲勞度：0~100 的進度條，依高低換色與文字
-function FatigueBar({ value }) {
-  const pct = clamp(Math.round(value ?? 0), 0, 100);
-  const color = pct < 40 ? "#3bb27a" : pct < 70 ? "#e0a92e" : "#e14b5a";
-  const label = pct < 40 ? "良好" : pct < 70 ? "偏高" : "疲勞";
-  return (
-    <div className="hr-fatigue">
-      <div className="hr-fatigue-head">
-        <span>目前疲勞度</span>
-        <b style={{ color }}>
-          {pct}%・{label}
-        </b>
-      </div>
-      <div className="hr-fatigue-track">
-        <div
-          className="hr-fatigue-fill"
-          style={{ width: `${pct}%`, background: color }}
-        />
       </div>
     </div>
   );
@@ -171,7 +184,7 @@ function BaselineForm({ onStart }) {
   );
 }
 
-function Dashboard({ base, live }) {
+function Dashboard({ base, live, data }) {
   const z = live.zone;
   // 愛心跳動週期＝60/心率（越快跳越快）；呼吸 icon 週期＝60/呼吸率
   const beatDur = `${(60 / clamp(live.hr, 40, 200)).toFixed(2)}s`;
@@ -211,11 +224,11 @@ function Dashboard({ base, live }) {
         />
       </div>
 
-      {/* 目前疲勞度 */}
-      <FatigueBar value={live.fatigue} />
-
       {/* 輔助力段數 */}
       <GearBar gear={live.gear} color={z.color} />
+
+      {/* 車輛數據（共用 BLE telemetry） */}
+      <TeleGrid data={data} />
     </>
   );
 }
@@ -224,6 +237,7 @@ export default function HeartRateMode({ onBack }) {
   const [base, setBase] = useState(null);
   const [confirmExit, setConfirmExit] = useState(false); // 返回確認視窗
   const { live } = useHeartRateEngine(base);
+  const { data } = useBle(); // 主畫面連好的共用連線，這裡讀車輛數據
 
   return (
     <div
@@ -239,7 +253,7 @@ export default function HeartRateMode({ onBack }) {
       </button>
 
       {!base && <BaselineForm onStart={setBase} />}
-      {base && live && <Dashboard base={base} live={live} />}
+      {base && live && <Dashboard base={base} live={live} data={data} />}
 
       {confirmExit && (
         <div className="hr-modal-backdrop" onClick={() => setConfirmExit(false)}>

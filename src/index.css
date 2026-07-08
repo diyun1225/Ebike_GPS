@@ -10,12 +10,19 @@ body {
   background: #e9ebee; /* 電腦上手機框外的底色 */
 }
 
-/* 整個 App 固定成一支手機寬度，置中；地圖鋪滿，其他元素浮在上面 */
-.dash {
+/* 手機框：固定成一支手機寬度並置中。浮動元素（小球、視窗）都以此為定位基準，
+   才會貼齊 App 畫面邊緣，而不是整個瀏覽器視窗。 */
+.app-shell {
   position: relative;
   height: 100vh;
   max-width: 430px;
   margin: 0 auto;
+}
+
+/* 各模式畫面：鋪滿手機框；地圖鋪滿，其他元素浮在上面 */
+.dash {
+  position: relative;
+  height: 100%;
   overflow: hidden;
   background: #000;
   box-shadow: 0 0 24px rgba(0, 0, 0, 0.12);
@@ -1166,41 +1173,6 @@ button:disabled {
 }
 
 /* 目前疲勞度 */
-.hr-fatigue {
-  margin-top: 18px;
-  background: #fff;
-  border: 1px solid #f7d5db;
-  border-radius: 14px;
-  padding: 12px 14px 14px;
-  box-shadow: 0 4px 14px rgba(230, 57, 80, 0.05);
-}
-.hr-fatigue-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 10px;
-}
-.hr-fatigue-head span {
-  font-size: 13px;
-  font-weight: 700;
-  color: #a86b78;
-}
-.hr-fatigue-head b {
-  font-size: 14px;
-  font-weight: 800;
-}
-.hr-fatigue-track {
-  height: 12px;
-  border-radius: 8px;
-  background: #f3d9de;
-  overflow: hidden;
-}
-.hr-fatigue-fill {
-  height: 100%;
-  border-radius: 8px;
-  transition: width 0.4s ease, background 0.4s ease;
-}
-
 /* 基準線設定 */
 .hr-setup {
   margin-top: 3vh;
@@ -1519,6 +1491,14 @@ button:disabled {
 .home-ble-btn:hover:not(:disabled) {
   background: #268a4f;
 }
+.home-ble-btn.ghost {
+  color: #2fa860;
+  background: #fff;
+  border: 1px solid #b7ddc6;
+}
+.home-ble-btn.ghost:hover:not(:disabled) {
+  background: #eef7f1;
+}
 .home-ble-btn:disabled {
   opacity: 0.7;
   cursor: default;
@@ -1750,6 +1730,62 @@ button:disabled {
 }
 .hr-gear-seg.on {
   box-shadow: 0 2px 8px rgba(230, 57, 80, 0.18);
+}
+
+/* 車輛數據（心肺模式下方，數值來自共用 BLE telemetry） */
+.hr-tele {
+  margin-top: 18px;
+}
+.hr-tele-speed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 0 14px;
+}
+.hr-tele-speed b {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  color: #e14b5a;
+  font-variant-numeric: tabular-nums;
+}
+.hr-tele-speed span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a86b78;
+  letter-spacing: 1px;
+}
+.hr-tele-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.hr-tele-card {
+  background: #fff;
+  border: 1px solid #f7d5db;
+  border-radius: 12px;
+  padding: 10px 8px;
+  text-align: center;
+  box-shadow: 0 4px 14px rgba(230, 57, 80, 0.05);
+}
+.hr-tele-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #a86b78;
+  margin-bottom: 4px;
+}
+.hr-tele-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: #4a3a3d;
+  font-variant-numeric: tabular-nums;
+}
+.hr-tele-value small {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a86b78;
 }
 
 /* ===== 電量管理：第一步設定表單（整頁蓋住地圖，風格對齊心肺模式） ===== */
@@ -2040,6 +2076,52 @@ button:disabled {
   letter-spacing: 2px;
 }
 
+/* 目前疲勞度（一般模式；數值來自 BLE data.fatigue） */
+.nm-fatigue {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.nm-fatigue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 14px;
+  font-weight: 700;
+  color: #4a5a51;
+  margin-bottom: 10px;
+}
+.nm-fatigue-head b {
+  font-size: 15px;
+  font-weight: 800;
+}
+.nm-fatigue-track {
+  height: 12px;
+  border-radius: 8px;
+  background: #eef1ef;
+  overflow: hidden;
+}
+.nm-fatigue-fill {
+  display: block;
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.4s ease, background 0.4s ease;
+}
+/* 一句話提醒：固定保留一行空間，內容由 data.fatigueAdvice 填入 */
+.nm-fatigue-tip {
+  min-height: 18px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+.nm-fatigue-tip.empty {
+  color: #b7c2ba;
+  font-weight: 600;
+}
+
 /* 電量條 */
 .nm-battery {
   background: #ffffff;
@@ -2288,4 +2370,211 @@ button:disabled {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ===== 騎乘手動控制：浮動小球 + 展開卡片（RideControls） ===== */
+/* 點外面收合用的透明遮罩（吃掉點擊，不擋視覺） */
+.rc-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1840;
+}
+
+.rc-ball {
+  position: absolute;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  margin: 0;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  z-index: 1850;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(28, 30, 40, 0.5);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  cursor: grab;
+  touch-action: none; /* 拖曳時不要觸發頁面捲動 */
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.rc-ball.right {
+  right: 12px;
+}
+.rc-ball.left {
+  left: 12px;
+}
+.rc-ball:active {
+  cursor: grabbing;
+  transform: translateY(-50%) scale(0.94);
+}
+.rc-ball.open {
+  background: rgba(66, 133, 244, 0.9);
+}
+.rc-ball-ico {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.rc-card {
+  position: absolute;
+  transform: translateY(-50%);
+  width: min(280px, calc(100% - 96px));
+  z-index: 1850;
+  background: rgba(24, 26, 34, 0.82);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  padding: 14px 16px 12px;
+  color: #fff;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.4);
+  animation: rcCardIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.rc-card.right {
+  right: 76px;
+}
+.rc-card.left {
+  left: 76px;
+  animation-name: rcCardInLeft;
+}
+@keyframes rcCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(12px);
+  }
+}
+@keyframes rcCardInLeft {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-12px);
+  }
+}
+.rc-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+.rc-close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rc-row {
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.rc-row:first-of-type {
+  border-top: none;
+}
+.rc-row-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfd4dc;
+  margin-bottom: 8px;
+}
+.rc-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b93a1;
+  margin-left: 4px;
+}
+
+/* +/− 步進器（變速、輔助力） */
+.rc-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rc-step {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+.rc-step:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.rc-step:active {
+  transform: scale(0.92);
+  background: rgba(66, 133, 244, 0.9);
+}
+.rc-val {
+  flex: 1;
+  text-align: center;
+  line-height: 1.1;
+}
+.rc-val b {
+  display: block;
+  font-size: 26px;
+  font-weight: 800;
+}
+.rc-val span {
+  font-size: 11px;
+  color: #9aa1ad;
+}
+
+/* 避震分段 0~5 */
+.rc-seg {
+  display: flex;
+  gap: 6px;
+}
+.rc-seg-btn {
+  flex: 1;
+  height: 44px;
+  padding: 0;
+  margin: 0;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cfd4dc;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
+}
+.rc-seg-btn:active {
+  transform: scale(0.92);
+}
+.rc-seg-btn.on {
+  background: #4285f4;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(66, 133, 244, 0.5);
+}
+
+.rc-foot {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  color: #9aa1ad;
+}
+.rc-foot-off {
+  color: #f5a623;
 }

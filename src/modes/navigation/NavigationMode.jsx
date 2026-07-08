@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useGoogleMaps } from "./useGoogleMaps.js";
 import { buildAutoSegments, gradeColor, fmtDist } from "./slope.js";
 import { estimateUsedPct, arrivalTime } from "./battery.js";
+import { routeProfileFrames, segmentToFrame } from "./canRoute.js";
 import { useLiveTelemetry } from "../../shared/useLiveTelemetry.js";
+import { publishRoute, publishGps, endMapSync } from "../../shared/mapSyncMqtt.js";
+import { useBle } from "../../ble/BleContext.jsx";
 import RouteForm from "./components/RouteForm.jsx";
 import RouteSheet from "./components/RouteSheet.jsx";
 import NavOverlay from "./components/NavOverlay.jsx";
@@ -73,6 +76,17 @@ function slopeAt(route, d) {
 export default function NavigationMode({ onBack }) {
   const { google, error: loadError } = useGoogleMaps(API_KEY);
   const live = useLiveTelemetry();
+  const ble = useBle(); // 主畫面連好的共用連線，用來把坡度資料送 CAN 給 AI 板
+
+  // 用 ref 拿最新的 ble，讓 sendCan 保持穩定（不必進各效果的相依陣列）。
+  // 沒連線 / 沒控制特徵 / 模擬中沒真板時，都靜默略過（sendCommand 內部會安全 no-op）。
+  const bleRef = useRef(ble);
+  bleRef.current = ble;
+  const sendCan = useCallback((frame) => {
+    const b = bleRef.current;
+    if (!b || b.phase !== "connected" || !b.canControl) return;
+    b.sendCommand(typeof frame === "string" ? frame : frame.tx);
+  }, []);
 
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
@@ -149,6 +163,25 @@ export default function NavigationMode({ onBack }) {
     };
   }, [phase, google, summary]);
 
+  // 進入導航：把整條路線剖面（表頭 + 各路段坡度）一次上傳給 AI 板
+  useEffect(() => {
+    if (phase !== "nav") return;
+    const route = routeRef.current;
+    if (!route?.segments?.length) return;
+    prevSegIdxRef.current = -1; // 重置，讓行進中第一段也會回報
+    const frames = routeProfileFrames(route.segments, route.routeId, route.total);
+    frames.forEach((f) => sendCan(f));
+
+    // 同步發送給網頁後台：一進導航就 publish 整條路線（retain，後台晚連也收得到）
+    publishRoute({
+      from: route.from,
+      to: route.to,
+      polyline: route.polyline,
+      distText: route.distText,
+      durText: route.durText,
+    });
+  }, [phase, sendCan]);
+
   // 模擬騎乘：沿路線推進，速度/踏頻/輔助/電量隨坡度變化
   useEffect(() => {
     if (phase !== "nav" || !riding || !routeRef.current || !google) return;
@@ -180,6 +213,7 @@ export default function NavigationMode({ onBack }) {
     let rafId;
     let lastT = null;
     let lastHudT = 0;
+    let lastPubT = 0; // 地圖同步：每秒發一次位置
     let lastHeading = 0;
 
     const frame = (now) => {
@@ -217,6 +251,12 @@ export default function NavigationMode({ onBack }) {
         map.setCenter(pos);
       }
 
+      // 地圖同步：每秒把目前位置發給網頁後台
+      if (now - lastPubT > 1000 || finished) {
+        lastPubT = now;
+        publishGps(pos.lat(), pos.lng(), heading);
+      }
+
       // 高亮目前所在的坡度段（只在換段時更新）
       const segEnds = route.segEnds || [];
       let segIdx = segEnds.findIndex((e) => s.distM <= e);
@@ -230,6 +270,9 @@ export default function NavigationMode({ onBack }) {
           })
         );
         prevSegIdxRef.current = segIdx;
+        // 換段就回報目前所在路段的坡度給 AI 板
+        const seg = route.segments?.[segIdx];
+        if (seg) sendCan(segmentToFrame(seg));
       }
 
       // 數據面板節流更新（每 250ms 一次，避免每幀重繪卡頓）
@@ -323,6 +366,7 @@ export default function NavigationMode({ onBack }) {
       });
     }
 
+    let lastPubT = 0; // 地圖同步：每秒發一次位置
     const watchId = navigator.geolocation.watchPosition(
       (p) => {
         const here = new google.maps.LatLng(
@@ -365,6 +409,13 @@ export default function NavigationMode({ onBack }) {
           map.setCenter(here);
         }
 
+        // 地圖同步：每秒把目前位置發給網頁後台
+        const nowMs = performance.now();
+        if (nowMs - lastPubT > 1000) {
+          lastPubT = nowMs;
+          publishGps(here.lat(), here.lng(), heading);
+        }
+
         // 高亮目前路段
         const segEnds = route.segEnds || [];
         let segIdx = segEnds.findIndex((e) => distM <= e);
@@ -378,6 +429,9 @@ export default function NavigationMode({ onBack }) {
             })
           );
           prevSegIdxRef.current = segIdx;
+          // 換段就回報目前所在路段的坡度給 AI 板
+          const seg = route.segments?.[segIdx];
+          if (seg) sendCan(segmentToFrame(seg));
         }
 
         // 下一個轉彎
@@ -456,6 +510,7 @@ export default function NavigationMode({ onBack }) {
 
   function exitNav() {
     setPhase("preview"); // 結束導航回到路線預覽（不是回表單）
+    endMapSync(); // 斷開地圖同步 MQTT
     setRiding(false);
     setGps(false);
     setSim(null);
@@ -662,6 +717,11 @@ export default function NavigationMode({ onBack }) {
         }));
       const stepEnds = steps.map((s) => (sacc += s.distVal));
 
+      // route_id：用起點→終點地名當識別碼（沒填則 null），送 CAN 表頭用
+      const namedStopsNow = stops.map((s) => s.trim()).filter(Boolean);
+      const routeId = namedStopsNow.length ? namedStopsNow.join(" → ") : null;
+
+      // 給網頁地圖同步用：整條路徑壓成 encoded polyline + 起終點/摘要文字
       routeRef.current = {
         points: rpts,
         elevs: relevs,
@@ -669,9 +729,17 @@ export default function NavigationMode({ onBack }) {
         total: rcum[rcum.length - 1],
         estUsedPct,
         segEnds,
+        segments: segs, // 路段坡度資料，進導航時上傳 CAN
+        routeId,
         steps,
         stepEnds,
         legDist: legDistVal,
+        // 地圖同步發送用
+        polyline: google.maps.geometry.encoding.encodePath(path),
+        from: namedStopsNow[0] || "起點",
+        to: namedStopsNow[namedStopsNow.length - 1] || "終點",
+        distText: fmtDist(totalDist),
+        durText: fmtDur(totalDurationSec),
       };
 
       setSummary({

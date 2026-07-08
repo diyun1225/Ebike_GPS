@@ -70,6 +70,7 @@ export function useHeartRateEngine(base) {
         dRR: +dRR.toFixed(1),
         rrHighDur: s.rrHighDur,
         fatigue: Math.round(s.fatigue), // 目前疲勞度 0~100
+        advice: "", // 一句話提醒（例：「心率過高，請適當休息」）— 之後改吃組員輸出
         zone,
         intensity: (s.hr - base.restingHr) / base.hrr,
         state: dir.state,

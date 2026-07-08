@@ -5,6 +5,7 @@ import NavigationMode from "./modes/navigation/NavigationMode.jsx";
 import HeartRateMode from "./modes/heartrate/HeartRateMode.jsx";
 import { BleProvider, useBle } from "./ble/BleContext.jsx";
 import { modeIdToFrame, MODE_CODE_BY_ID, MODE_LABEL_BY_ID } from "./modeFrame.js";
+import RideControls from "./controls/RideControls.jsx";
 
 // 整個 App 的最上層：用 BleProvider 讓全 App 共用「一條」與運算板的 BLE 連線，
 // 再在 AppInner 處理「選模式 → 確認 → 送 MODEREQ → 等板子 ACK → 進入」的流程。
@@ -89,8 +90,12 @@ function AppInner() {
   else screen = <HomeScreen onSelect={requestEnter} pending={pending} />;
 
   return (
-    <>
+    // 手機框：固定成一支手機寬度並置中。浮動元素（小球、視窗）以此為定位基準，
+    // 才會貼齊 App 畫面邊緣，而不是整個瀏覽器視窗的邊緣。
+    <div className="app-shell">
       {screen}
+      {/* 手動控制小球：只在進入某個模式後浮現（主畫面不顯示） */}
+      {mode && <RideControls mode={mode} />}
       {pending && (
         <EnterModal
           modeId={pending}
@@ -101,7 +106,7 @@ function AppInner() {
           onEnterAnyway={() => enterNow(pending)}
         />
       )}
-    </>
+    </div>
   );
 }
 
