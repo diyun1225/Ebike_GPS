@@ -5,6 +5,51 @@ import { useBle } from "../../ble/BleContext.jsx";
 const fmt = (v, digits = 0) =>
   v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(digits);
 
+const has = (v) => v != null && !Number.isNaN(v);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// 輔助力段位數值 → 顯示單詞（對照韌體 assistModeName）
+const ASSIST_WORDS = ["Off", "Eco", "Eco+", "Normal", "Sport", "Sport+"];
+
+// ── 主時速圓弧儀表（270° 掃角，缺口朝下）──
+function SpeedGauge({ value, max = 40 }) {
+  const on = has(value);
+  const v = on ? clamp(value, 0, max) : 0;
+  const frac = v / max;
+  const size = 244, stroke = 20;
+  const r = (size - stroke) / 2;
+  const c = size / 2;
+  const CIRC = 2 * Math.PI * r;
+  const SWEEP = 0.75; // 270°
+  const dash = CIRC * SWEEP;
+  const color = on && value >= 25 ? "#f5a623" : "#2fa860";
+  return (
+    <div className="nm-gauge" style={{ width: size, height: size }}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="nm-gauge-svg" aria-hidden="true">
+        <circle
+          className="nm-gauge-track"
+          cx={c} cy={c} r={r} fill="none"
+          strokeWidth={stroke} strokeLinecap="round"
+          strokeDasharray={`${dash} ${CIRC}`}
+          transform={`rotate(135 ${c} ${c})`}
+        />
+        <circle
+          className="nm-gauge-fill"
+          cx={c} cy={c} r={r} fill="none"
+          stroke={color} strokeWidth={stroke} strokeLinecap="round"
+          strokeDasharray={`${dash * frac} ${CIRC}`}
+          transform={`rotate(135 ${c} ${c})`}
+        />
+      </svg>
+      <div className="nm-gauge-center">
+        <b className="nm-gauge-num">{on ? fmt(value, 1) : "—"}</b>
+        <span className="nm-gauge-unit">km/h</span>
+        <span className="nm-gauge-cap">目前時速</span>
+      </div>
+    </div>
+  );
+}
+
 // 一張數據小卡
 function StatCard({ label, value, unit, accent }) {
   return (
@@ -18,63 +63,56 @@ function StatCard({ label, value, unit, accent }) {
   );
 }
 
-// 助力段位數值 → 模式名稱（對照韌體 assistModeName）
-const ASSIST_NAMES = ["off", "eco", "eco+", "normal", "sport", "sport+"];
-
-// 控制區：變速（升/降檔）＋ 助力段位（0~5），透過 BLE 送指令給板子
-function Controls({ commandedAssist, onShiftUp, onShiftDown, onSetAssist }) {
+// 電池電量：直立電池外型 + 五格（每格 20%，由下往上填）
+function BatteryVert({ soc }) {
+  const pct = has(soc) ? clamp(soc, 0, 100) : 0;
+  const filled = pct > 0 ? Math.max(1, Math.round(pct / 20)) : 0;
+  const color = pct <= 20 ? "#e0533d" : pct <= 50 ? "#f5a623" : "#2fa860";
   return (
-    <div className="nm-controls">
-      <div className="nm-ctl-block">
-        <span className="nm-ctl-label">變速</span>
-        <div className="nm-shift">
-          <button className="nm-shift-btn" onClick={onShiftDown}>
-            降檔 ▼
-          </button>
-          <button className="nm-shift-btn" onClick={onShiftUp}>
-            升檔 ▲
-          </button>
-        </div>
-      </div>
-
-      <div className="nm-ctl-block">
-        <span className="nm-ctl-label">助力段位</span>
-        <div className="nm-assist-btns">
-          {ASSIST_NAMES.map((name, lvl) => (
-            <button
-              key={lvl}
-              className={`nm-assist-btn ${commandedAssist === lvl ? "on" : ""}`}
-              onClick={() => onSetAssist(lvl)}
-            >
-              <b>{lvl}</b>
-              <span>{name}</span>
-            </button>
-          ))}
-        </div>
+    <div className="nm-battv">
+      <span className="nm-battv-cap" />
+      <div className="nm-battv-shell">
+        {Array.from({ length: 5 }).map((_, i) => {
+          const on = i >= 5 - filled; // 由下往上亮
+          return (
+            <span
+              key={i}
+              className={`nm-battv-cell ${on ? "on" : ""}`}
+              style={on ? { background: color } : null}
+            />
+          );
+        })}
       </div>
     </div>
   );
 }
 
+// 輔助力：只顯示單詞（Off / Eco / Eco+ / Normal / Sport / Sport+）
+function AssistLevel({ level }) {
+  const word = level == null ? "—" : ASSIST_WORDS[clamp(level, 0, 5)];
+  return (
+    <div className="nm-corner-assist">
+      <span className="nm-corner-label">輔助力</span>
+      <b className="nm-corner-word">{word}</b>
+    </div>
+  );
+}
+
 // 目前疲勞度：0~100 進度條，依高低換色與文字。
-// 數值來自 BLE telemetry 的 data.fatigue（組員之後於韌體/解碼器補上）；沒有時顯示「—」。
 function FatigueBar({ value, tip }) {
-  const has = value != null && !Number.isNaN(value);
-  const pct = has ? Math.max(0, Math.min(100, Math.round(value))) : 0;
+  const ok = has(value);
+  const pct = ok ? clamp(Math.round(value), 0, 100) : 0;
   const color = pct < 40 ? "#2fa860" : pct < 70 ? "#f5a623" : "#e0533d";
-  const label = !has ? "—" : pct < 40 ? "良好" : pct < 70 ? "偏高" : "疲勞";
+  const label = !ok ? "—" : pct < 40 ? "良好" : pct < 70 ? "偏高" : "疲勞";
   const msg = tip?.trim();
   return (
-    <div className="nm-fatigue">
-      <div className="nm-fatigue-head">
+    <div className="nm-panel nm-fatigue">
+      <div className="nm-panel-head">
         <span>目前疲勞度</span>
-        <b style={has ? { color } : null}>{has ? `${pct}%・${label}` : "—"}</b>
+        <b style={ok ? { color } : null}>{ok ? `${pct}%・${label}` : "—"}</b>
       </div>
-      <div className="nm-fatigue-track">
-        <span
-          className="nm-fatigue-fill"
-          style={{ width: `${pct}%`, background: color }}
-        />
+      <div className="nm-track">
+        <span className="nm-track-fill" style={{ width: `${pct}%`, background: color }} />
       </div>
       {/* 一句話提醒：內容由組員輸出填入 data.fatigueAdvice；沒有時保留空間 */}
       <div className={`nm-fatigue-tip ${msg ? "" : "empty"}`} style={msg ? { color } : null}>
@@ -84,88 +122,57 @@ function FatigueBar({ value, tip }) {
   );
 }
 
-// 助力等級（0~5）階梯段位
-function AssistBar({ level }) {
-  const total = 5;
-  const on = level == null ? 0 : Math.max(0, Math.min(total, level));
-  return (
-    <div className="nm-assist">
-      <div className="nm-assist-head">
-        <span>助力等級</span>
-        <b>{level == null ? "—" : level}</b>
-      </div>
-      <div className="nm-assist-bars">
-        {Array.from({ length: total }).map((_, i) => (
-          <span
-            key={i}
-            className={`nm-assist-seg ${i < on ? "on" : ""}`}
-            style={{ height: `${45 + i * 13}%` }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function Dashboard({ data }) {
   const d = data || {};
-  const soc = d.batterySocPct;
-  const socPct = soc == null ? 0 : Math.max(0, Math.min(100, soc));
-  const socColor = socPct <= 20 ? "#e0533d" : socPct <= 50 ? "#f5a623" : "#2fa860";
+  const battTemp =
+    d.batteryTempsC && d.batteryTempsC.some((t) => t != null)
+      ? Math.max(...d.batteryTempsC.filter((t) => t != null))
+      : null;
 
   return (
     <div className="nm-dash">
-      {/* 主角：時速 */}
-      <div className="nm-hero">
-        <b className="nm-hero-num">{fmt(d.speedKph, 1)}</b>
-        <span className="nm-hero-unit">km/h</span>
-        <span className="nm-hero-sub">目前時速</span>
-      </div>
-
-      {/* 電量條 */}
-      <div className="nm-battery">
-        <div className="nm-battery-head">
-          <span>電池電量</span>
-          <b style={{ color: socColor }}>{soc == null ? "—" : `${soc}%`}</b>
+      {/* 主儀表座：時速置中，左下電量、右下輔助力 */}
+      <div className="nm-cluster">
+        <SpeedGauge value={has(d.speedKph) ? d.speedKph : null} />
+        <div className="nm-cluster-bl">
+          <BatteryVert soc={d.batterySocPct} />
         </div>
-        <div className="nm-battery-track">
-          <span
-            className="nm-battery-fill"
-            style={{ width: `${socPct}%`, background: socColor }}
-          />
-        </div>
-        <div className="nm-battery-sub">
-          <span>{fmt(d.batteryVoltageMv != null ? d.batteryVoltageMv / 1000 : null, 1)} V</span>
-          <span>{fmt(d.batteryCurrentMa != null ? d.batteryCurrentMa / 1000 : null, 1)} A</span>
+        <div className="nm-cluster-br">
+          <AssistLevel level={d.assistLevel} />
         </div>
       </div>
-
-      {/* 助力等級 */}
-      <AssistBar level={d.assistLevel} />
 
       {/* 目前疲勞度（組員藍牙傳來的 data.fatigue） */}
       <FatigueBar value={d.fatigue} tip={d.fatigueAdvice} />
 
-      {/* 其餘數據卡 */}
+      {/* 心率 / 呼吸率（藍牙傳來的 data.hr、data.rr） */}
+      <div className="nm-grid">
+        <StatCard label="心率" value={fmt(d.hr)} unit="bpm" accent="#e0533d" />
+        <StatCard label="呼吸率" value={fmt(d.rr)} unit="次/分" accent="#2f93b5" />
+      </div>
+
+      {/* 其餘數據卡：踏頻 / 扭力 / 馬達轉速 / 馬達溫度 */}
       <div className="nm-grid">
         <StatCard label="踏頻" value={fmt(d.cadenceRpm)} unit="rpm" />
         <StatCard label="踏板扭力" value={fmt(d.torqueNm, 1)} unit="Nm" />
         <StatCard label="馬達轉速" value={fmt(d.motorRpm)} unit="rpm" />
         <StatCard label="馬達溫度" value={fmt(d.motorTempC)} unit="°C" accent="#e0813d" />
-        <StatCard
-          label="後變速檔位"
-          value={d.rearGear ? `${d.rearGear.index}/${d.rearGear.max}` : "—"}
-        />
-        <StatCard
-          label="電池溫度"
-          value={
-            d.batteryTempsC && d.batteryTempsC.some((t) => t != null)
-              ? Math.max(...d.batteryTempsC.filter((t) => t != null))
-              : "—"
-          }
-          unit="°C"
-          accent="#e0813d"
-        />
+      </div>
+
+      {/* 電池明細擺最下面：電壓 / 電流 / 電池溫度 */}
+      <div className="nm-detail">
+        <span>
+          <i>電壓</i>
+          <b>{fmt(d.batteryVoltageMv != null ? d.batteryVoltageMv / 1000 : null, 1)} V</b>
+        </span>
+        <span>
+          <i>電流</i>
+          <b>{fmt(d.batteryCurrentMa != null ? d.batteryCurrentMa / 1000 : null, 1)} A</b>
+        </span>
+        <span>
+          <i>電池溫度</i>
+          <b>{has(battTemp) ? `${battTemp} °C` : "—"}</b>
+        </span>
       </div>
     </div>
   );
@@ -179,11 +186,6 @@ export default function NormalMode({ onBack }) {
     logLines,
     rawLines,
     clearLog,
-    canControl,
-    commandedAssist,
-    shiftUp,
-    shiftDown,
-    setAssist,
   } = useBle(); // 共用 App 層那條連線（連線在主畫面做，這裡只讀資料）
   const [confirmExit, setConfirmExit] = useState(false);
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
@@ -199,18 +201,14 @@ export default function NormalMode({ onBack }) {
         ‹ 主畫面
       </button>
 
-      <h1 className="nm-header">一般模式</h1>
+      <div className="nm-topbar">
+        <h1 className="nm-header">一般模式</h1>
+        <span className={`nm-live ${connected ? "on" : ""}`}>
+          <i /> {connected ? "自行車連線中" : "未連線"}
+        </span>
+      </div>
 
       {error && <div className="nm-error">{error}</div>}
-
-      {connected && canControl && (
-        <Controls
-          commandedAssist={commandedAssist}
-          onShiftUp={shiftUp}
-          onShiftDown={shiftDown}
-          onSetAssist={setAssist}
-        />
-      )}
 
       {connected || data ? (
         <Dashboard data={data} />

@@ -207,6 +207,8 @@ export function useBleTelemetry() {
         rearGear: { index: 1 + (Math.floor(t / 8) % 7), max: 7 },
         fatigue,
         fatigueAdvice,
+        hr: Math.round(wave(40, 22, 128) + jit(3)), // 心率 bpm
+        rr: Math.round(wave(36, 6, 22) + jit(1)), // 呼吸率 次/分
       });
     };
     gen(); // 立刻先給一筆，不用等 500ms

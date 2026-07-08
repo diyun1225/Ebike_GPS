@@ -1943,12 +1943,22 @@ button:disabled {
   margin-top: 12px;
 }
 
-/* ===== 一般模式（藍牙即時車況）===== */
+/* ===== 一般模式（藍牙即時車況・儀表板）===== */
 .dash.nm {
   background: linear-gradient(170deg, #eef6f1 0%, #f7faf8 46%, #fbfbfc 100%);
   color: #23342b;
-  padding: 50px 18px 28px;
+  padding: 16px 18px 28px;
   overflow-y: auto;
+}
+
+/* 標題列：模式名置中，即時狀態靠右上角 */
+.nm-topbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  margin: 0 0 16px;
 }
 .nm-header {
   text-align: center;
@@ -1956,58 +1966,40 @@ button:disabled {
   font-weight: 800;
   letter-spacing: 2px;
   color: #2f5d43;
-  margin: 0 0 16px;
+  margin: 0;
+}
+.nm-live {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #93a49a;
+  background: #eef2ef;
+  border: 1px solid #e0e7e2;
+}
+.nm-live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b6c2ba;
+}
+.nm-live.on {
+  color: #2f8f57;
+  border-color: #bfe4cd;
+  background: #e9f7ee;
+}
+.nm-live.on i {
+  background: #2fa860;
+  box-shadow: 0 0 0 3px rgba(47, 168, 96, 0.18);
 }
 
-/* 連線狀態列 */
-.nm-conn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #ffffff;
-  border-radius: 14px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-}
-.nm-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #c2ccc6;
-  flex: none;
-}
-.nm-dot.on {
-  background: #2fa860;
-  box-shadow: 0 0 0 4px rgba(47, 168, 96, 0.18);
-}
-.nm-conn-status {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-  color: #4a5a51;
-}
-.nm-btn {
-  border: none;
-  border-radius: 10px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 800;
-  color: #fff;
-  background: #2f8f57;
-  box-shadow: 0 6px 16px rgba(47, 143, 87, 0.28);
-  cursor: pointer;
-}
-.nm-btn:disabled {
-  background: #a9d0ba;
-  box-shadow: none;
-  cursor: default;
-}
-.nm-btn.ghost {
-  background: transparent;
-  color: #b0483a;
-  box-shadow: none;
-  border: 1.5px solid #e0b5af;
-}
 .nm-error {
   margin-top: 10px;
   padding: 10px 14px;
@@ -2038,80 +2030,176 @@ button:disabled {
   color: #9aa8a0;
 }
 
-/* 儀表板 */
+/* 儀表板容器 */
 .nm-dash {
-  margin-top: 14px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-/* 主角：時速 */
-.nm-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px 0 16px;
-  background: #ffffff;
-  border-radius: 20px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
-}
-.nm-hero-num {
-  font-size: 64px;
-  font-weight: 900;
-  line-height: 1;
-  color: #23342b;
-  font-variant-numeric: tabular-nums;
-}
-.nm-hero-unit {
-  font-size: 16px;
-  font-weight: 700;
-  color: #2f8f57;
-  margin-top: 4px;
-}
-.nm-hero-sub {
-  font-size: 12px;
-  color: #94a29a;
-  margin-top: 6px;
-  letter-spacing: 2px;
-}
-
-/* 目前疲勞度（一般模式；數值來自 BLE data.fatigue） */
-.nm-fatigue {
+/* 共用面板卡 */
+.nm-panel {
   background: #ffffff;
   border-radius: 16px;
-  padding: 14px 16px;
+  padding: 15px 16px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
-.nm-fatigue-head {
+.nm-panel-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   font-size: 14px;
   font-weight: 700;
   color: #4a5a51;
-  margin-bottom: 10px;
 }
-.nm-fatigue-head b {
-  font-size: 15px;
+.nm-panel-head b {
+  font-size: 18px;
   font-weight: 800;
+  color: #23342b;
 }
-.nm-fatigue-track {
+.nm-panel-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4a5a51;
+}
+
+/* 進度軌（疲勞共用） */
+.nm-track {
   height: 12px;
   border-radius: 8px;
   background: #eef1ef;
   overflow: hidden;
+  margin: 12px 0 0;
 }
-.nm-fatigue-fill {
+.nm-track-fill {
   display: block;
   height: 100%;
   border-radius: 8px;
-  transition: width 0.4s ease, background 0.4s ease;
+  transition: width 0.5s ease, background 0.4s ease;
 }
-/* 一句話提醒：固定保留一行空間，內容由 data.fatigueAdvice 填入 */
+
+/* ── 主儀表座：時速置中（無外框），左下電量、右下輔助力 ── */
+.nm-cluster {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 6px;
+}
+.nm-cluster-bl {
+  position: absolute;
+  left: 6px;
+  bottom: 10px;
+}
+.nm-cluster-br {
+  position: absolute;
+  right: 6px;
+  bottom: 18px;
+  text-align: right;
+}
+.nm-gauge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.nm-gauge-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.nm-gauge-track {
+  stroke: #eef1ef;
+}
+.nm-gauge-fill {
+  transition: stroke-dasharray 0.6s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.3s ease;
+}
+.nm-gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+}
+.nm-gauge-num {
+  font-size: 62px;
+  font-weight: 900;
+  color: #23342b;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+}
+.nm-gauge-unit {
+  font-size: 15px;
+  font-weight: 800;
+  color: #2f8f57;
+  margin-top: 8px;
+  letter-spacing: 1px;
+}
+.nm-gauge-cap {
+  font-size: 12px;
+  color: #94a29a;
+  margin-top: 8px;
+  letter-spacing: 3px;
+}
+
+/* ── 電池電量：直立電池外型 + 五格（角落用） ── */
+.nm-battv {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.nm-battv-cap {
+  width: 22px;
+  height: 4px;
+  border-radius: 3px 3px 0 0;
+  background: #cdd8d1;
+}
+.nm-battv-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 46px;
+  padding: 4px;
+  border: 2.5px solid #cdd8d1;
+  border-radius: 7px;
+  background: #f6f9f7;
+}
+.nm-battv-cell {
+  height: 10px;
+  border-radius: 2.5px;
+  background: #e7ece9;
+  transition: background 0.35s ease;
+}
+
+/* ── 輔助力：只顯示單詞（角落用） ── */
+.nm-corner-assist {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.nm-corner-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a29a;
+  letter-spacing: 1px;
+}
+.nm-corner-word {
+  font-size: 24px;
+  font-weight: 900;
+  color: #2f8f57;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+/* 疲勞度提醒 */
 .nm-fatigue-tip {
   min-height: 18px;
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: 12.5px;
   font-weight: 700;
   line-height: 1.4;
@@ -2122,161 +2210,7 @@ button:disabled {
   font-weight: 600;
 }
 
-/* 電量條 */
-.nm-battery {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 14px 16px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-}
-.nm-battery-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 14px;
-  font-weight: 700;
-  color: #4a5a51;
-}
-.nm-battery-head b {
-  font-size: 18px;
-}
-.nm-battery-track {
-  height: 12px;
-  border-radius: 8px;
-  background: #eef1ef;
-  overflow: hidden;
-  margin: 10px 0 8px;
-}
-.nm-battery-fill {
-  display: block;
-  height: 100%;
-  border-radius: 8px;
-  transition: width 0.4s ease, background 0.4s ease;
-}
-.nm-battery-sub {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  font-weight: 600;
-  color: #6a7a70;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 助力等級段位 */
-/* 控制區：變速（升/降檔）＋ 助力段位（0~5） */
-.nm-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 14px 16px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-}
-.nm-ctl-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.nm-ctl-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: #4a5a51;
-}
-.nm-shift {
-  display: flex;
-  gap: 10px;
-}
-.nm-shift-btn {
-  flex: 1;
-  margin: 0;
-  padding: 12px;
-  font-size: 15px;
-  font-weight: 800;
-  color: #2f6f4a;
-  background: #eaf5ee;
-  border: 1px solid #cfe6d8;
-  border-radius: 12px;
-  cursor: pointer;
-}
-.nm-shift-btn:hover:not(:disabled) {
-  background: #dcefe3;
-}
-.nm-shift-btn:active {
-  background: #cfe6d8;
-}
-.nm-assist-btns {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-}
-.nm-assist-btn {
-  margin: 0;
-  padding: 8px 2px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  background: #f4f6f5;
-  border: 1px solid #e3e8e5;
-  border-radius: 10px;
-  color: #6a7a71;
-  cursor: pointer;
-}
-.nm-assist-btn b {
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1;
-}
-.nm-assist-btn span {
-  font-size: 9px;
-  font-weight: 600;
-}
-.nm-assist-btn:hover:not(:disabled) {
-  background: #eef1ef;
-}
-.nm-assist-btn.on {
-  background: #2f8f57;
-  border-color: #2f8f57;
-  color: #fff;
-}
-
-.nm-assist {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 14px 16px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-}
-.nm-assist-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 14px;
-  font-weight: 700;
-  color: #4a5a51;
-}
-.nm-assist-head b {
-  font-size: 18px;
-  color: #2f8f57;
-}
-.nm-assist-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  height: 46px;
-  margin-top: 10px;
-}
-.nm-assist-seg {
-  flex: 1;
-  border-radius: 6px 6px 3px 3px;
-  background: #eef1ef;
-  transition: background 0.2s ease;
-}
-.nm-assist-seg.on {
-  background: #2f8f57;
-}
-
-/* 數據卡格 */
+/* 數據卡格（踏頻 / 扭力 / 馬達轉速 / 馬達溫度） */
 .nm-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2308,6 +2242,36 @@ button:disabled {
   font-weight: 700;
   color: #94a29a;
   margin-left: 4px;
+}
+
+/* 電池明細（擺最下面）：電壓 / 電流 / 電池溫度 */
+.nm-detail {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 14px 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.nm-detail span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.nm-detail i {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a29a;
+  letter-spacing: 1px;
+}
+.nm-detail b {
+  font-size: 16px;
+  font-weight: 800;
+  color: #3a4a41;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 診斷面板（log + 原始封包）——手機沒 console 時靠它除錯 */
