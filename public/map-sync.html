@@ -272,7 +272,21 @@
   function stopMoving() { if (simTimer) { clearInterval(simTimer); simTimer = null; } }
 
   //================= 後台：收到就畫 ================================
+  // 清空後台地圖上的路線 / 起終點 / GPS 箭頭
+  function clearViewer() {
+    if (viewerLine) { viewerLine.setMap(null); viewerLine = null; }
+    endMarkers.forEach((m) => m.setMap(null)); endMarkers = [];
+    if (gpsMarker) { gpsMarker.setMap(null); gpsMarker = null; }
+  }
+
   function drawReceivedRoute(msg) {
+    // 前台結束導航（或 App 意外斷線的遺囑）→ 清空畫面
+    if (msg.end) {
+      clearViewer();
+      $("viewerInfo").textContent = "前台已結束導航";
+      log("← 前台結束導航，已清空地圖");
+      return;
+    }
     const path = google.maps.geometry.encoding.decodePath(msg.polyline);
     if (viewerLine) viewerLine.setMap(null);
     viewerLine = new google.maps.Polyline({ path, strokeColor: "#1a73e8", strokeWeight: 5, map });
