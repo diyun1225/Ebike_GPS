@@ -31,6 +31,8 @@ jobs:
           # MQTT 地圖同步設定（沒設 secret 時，程式會退回預設 broker/房間）
           VITE_MQTT_URL: ${{ secrets.VITE_MQTT_URL }}
           VITE_MQTT_ROOM: ${{ secrets.VITE_MQTT_ROOM }}
+      # 後台觀看頁只給組員本機用，不上 GitHub Pages → 部署前從 dist 移除
+      - run: rm -f dist/map-sync.html dist/config.js dist/config.example.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

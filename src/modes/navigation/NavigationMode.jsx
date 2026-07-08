@@ -134,6 +134,7 @@ export default function NavigationMode({ onBack }) {
   const dirRendererRef = useRef(null);
   const elevServiceRef = useRef(null);
   const polylinesRef = useRef([]);
+  const endMarkersRef = useRef([]); // 自己放的起/終點標記
   const infoWindowRef = useRef(null);
   const boundsRef = useRef(null);
 
@@ -176,9 +177,11 @@ export default function NavigationMode({ onBack }) {
       fullscreenControl: false, // 手機框內用不到，拿掉才不會擠到右上角的車況
     });
     dirServiceRef.current = new google.maps.DirectionsService();
+    // 不掛到地圖：只用它拿路線資料，不讓它在圖上畫東西
+    // （掛上去的話，自行車模式會被 Google 疊上「整區自行車道圖層」那一堆綠線）
     dirRendererRef.current = new google.maps.DirectionsRenderer({
-      map: mapRef.current,
       suppressPolylines: true, // 路線改用我們自己畫的彩色坡度線
+      suppressMarkers: true, // 起/終點改用我們自己放
     });
     elevServiceRef.current = new google.maps.ElevationService();
     infoWindowRef.current = new google.maps.InfoWindow();
@@ -619,6 +622,8 @@ export default function NavigationMode({ onBack }) {
   function clearRoute() {
     polylinesRef.current.forEach((p) => p.setMap(null));
     polylinesRef.current = [];
+    endMarkersRef.current.forEach((m) => m.setMap(null));
+    endMarkersRef.current = [];
     setSegments([]);
     setSummary(null);
   }
@@ -654,6 +659,20 @@ export default function NavigationMode({ onBack }) {
       seg.locs.forEach((l) => bounds.extend(l));
     });
     boundsRef.current = bounds;
+
+    // 自己放起/終點標記（取代 DirectionsRenderer 的預設標記）
+    endMarkersRef.current.forEach((m) => m.setMap(null));
+    endMarkersRef.current = [];
+    if (segs.length) {
+      const first = segs[0].locs[0];
+      const lastSeg = segs[segs.length - 1].locs;
+      const last = lastSeg[lastSeg.length - 1];
+      endMarkersRef.current = [
+        new google.maps.Marker({ position: first, map: mapRef.current, label: "起" }),
+        new google.maps.Marker({ position: last, map: mapRef.current, label: "終" }),
+      ];
+    }
+
     if (fit) mapRef.current.fitBounds(bounds); // 拖曳微調時不重新框，保留使用者目前視角
   }
 
