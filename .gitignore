@@ -4,4 +4,4 @@ dist
 .claude
 .DS_Store
 # 含 Google 金鑰，不進版控；用 config.example.js 當範本，實際檔直接傳給組員
-public/config.js
+viewer/config.js
