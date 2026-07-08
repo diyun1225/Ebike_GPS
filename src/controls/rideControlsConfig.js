@@ -43,6 +43,6 @@ export const ASSIST_MAX = 5;
 export const SUSPENSION_MIN = 0;
 export const SUSPENSION_MAX = 5;
 
-// 變速沒有固定檔數 —— 由 Derailleur State(0x650) 的 GearRange 回報，
+// 變速共 10 檔 —— 若 Derailleur State(0x650) 的 GearRange 有回報就以車子為準，
 // 遙測拿不到時用這個當備援上限（相對升/降檔本來就不需要知道總數）。
-export const SHIFT_FALLBACK_MAX = 24;
+export const SHIFT_FALLBACK_MAX = 10;

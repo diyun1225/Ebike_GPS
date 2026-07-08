@@ -2196,6 +2196,69 @@ button:disabled {
   line-height: 1;
 }
 
+/* ── 電子坐墊：預設鎖定，長按鎖頭解鎖 ── */
+.nm-seat-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nm-seat-lock {
+  margin: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  border: 1px solid #e0e7e2;
+  border-radius: 10px;
+  background: #f2f6f3;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.nm-seat-lock.holding {
+  background: #eaf5ee;
+  border-color: #bfe4cd;
+  box-shadow: 0 0 0 3px rgba(47, 168, 96, 0.16);
+}
+.nm-seat-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.nm-seat-btn {
+  margin: 0;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #2f6f4a;
+  background: #eaf5ee;
+  border: 1px solid #cfe6d8;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.nm-seat-btn:active:not(:disabled) {
+  background: #cfe6d8;
+}
+.nm-seat-btn:disabled {
+  color: #a9bcb0;
+  background: #f2f5f3;
+  border-color: #e6ebe8;
+  cursor: default;
+}
+.nm-seat-hint {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a29a;
+}
+
 /* 疲勞度提醒 */
 .nm-fatigue-tip {
   min-height: 18px;

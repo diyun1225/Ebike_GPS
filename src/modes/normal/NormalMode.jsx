@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBle } from "../../ble/BleContext.jsx";
 
 // 沒有數值（null / undefined）時統一顯示破折號
@@ -98,18 +98,135 @@ function AssistLevel({ level }) {
   );
 }
 
+// 電子坐墊：預設鎖定，長按鎖頭才解鎖，避免騎乘中誤觸。
+// 解鎖後長按 ▲▼ 連續升降；閒置一段時間會自動重新上鎖。
+// 目前只做本地暫存值 + 畫面回饋；CAN 指令晚點再接（見下方 TODO）。
+const SEAT_UNLOCK_MS = 700; // 長按這麼久才解鎖
+const SEAT_RELOCK_MS = 10000; // 閒置這麼久自動上鎖
+
+function SeatControl() {
+  const [pos, setPos] = useState(50); // 坐墊高度 0~100（暫存）
+  const [locked, setLocked] = useState(true);
+  const [holding, setHolding] = useState(false); // 解鎖長按進行中
+  const stepTimer = useRef(null);
+  const unlockTimer = useRef(null);
+  const relockTimer = useRef(null);
+
+  // 每次操作後重新計時，閒置 SEAT_RELOCK_MS 就自動上鎖
+  const scheduleRelock = () => {
+    clearTimeout(relockTimer.current);
+    relockTimer.current = setTimeout(() => setLocked(true), SEAT_RELOCK_MS);
+  };
+
+  const step = (dir) => {
+    setPos((p) => clamp(p + dir, 0, 100));
+    scheduleRelock();
+    // TODO: 之後在這裡送電子坐墊升降的 CAN 指令
+  };
+  const stopStep = () => {
+    if (stepTimer.current) {
+      clearInterval(stepTimer.current);
+      stepTimer.current = null;
+    }
+  };
+  const startStep = (dir) => {
+    if (locked) return; // 鎖定時不動作
+    step(dir); // 先動一下（短按也有效）
+    stopStep();
+    stepTimer.current = setInterval(() => step(dir), 120); // 長按連續調整
+  };
+
+  // 鎖頭：鎖定時長按解鎖；已解鎖時按一下立即上鎖
+  const onLockDown = () => {
+    if (!locked) {
+      setLocked(true);
+      clearTimeout(relockTimer.current);
+      return;
+    }
+    setHolding(true);
+    unlockTimer.current = setTimeout(() => {
+      setHolding(false);
+      setLocked(false);
+      scheduleRelock();
+    }, SEAT_UNLOCK_MS);
+  };
+  const cancelUnlock = () => {
+    setHolding(false);
+    clearTimeout(unlockTimer.current);
+  };
+
+  useEffect(() => () => {
+    // 卸載時清掉所有計時器
+    clearInterval(stepTimer.current);
+    clearTimeout(unlockTimer.current);
+    clearTimeout(relockTimer.current);
+  }, []);
+
+  return (
+    <div className={`nm-panel nm-seat ${locked ? "locked" : ""}`}>
+      <div className="nm-panel-head">
+        <span>電子坐墊</span>
+        <div className="nm-seat-head-right">
+          <b>{pos}%</b>
+          <button
+            className={`nm-seat-lock ${holding ? "holding" : ""}`}
+            onPointerDown={onLockDown}
+            onPointerUp={cancelUnlock}
+            onPointerLeave={cancelUnlock}
+            onPointerCancel={cancelUnlock}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label={locked ? "長按解鎖" : "上鎖"}
+          >
+            {locked ? "🔒" : "🔓"}
+          </button>
+        </div>
+      </div>
+      <div className="nm-seat-btns">
+        <button
+          className="nm-seat-btn"
+          disabled={locked}
+          onPointerDown={() => startStep(-1)}
+          onPointerUp={stopStep}
+          onPointerLeave={stopStep}
+          onPointerCancel={stopStep}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          降低 ▼
+        </button>
+        <button
+          className="nm-seat-btn"
+          disabled={locked}
+          onPointerDown={() => startStep(+1)}
+          onPointerUp={stopStep}
+          onPointerLeave={stopStep}
+          onPointerCancel={stopStep}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          升高 ▲
+        </button>
+      </div>
+      <div className="nm-seat-hint">
+        {locked
+          ? holding
+            ? "按住解鎖中…"
+            : "🔒 已鎖定 · 長按鎖頭解鎖"
+          : "已解鎖 · 長按可連續調整"}
+      </div>
+    </div>
+  );
+}
+
 // 目前疲勞度：0~100 進度條，依高低換色與文字。
 function FatigueBar({ value, tip }) {
   const ok = has(value);
   const pct = ok ? clamp(Math.round(value), 0, 100) : 0;
   const color = pct < 40 ? "#2fa860" : pct < 70 ? "#f5a623" : "#e0533d";
-  const label = !ok ? "—" : pct < 40 ? "良好" : pct < 70 ? "偏高" : "疲勞";
   const msg = tip?.trim();
   return (
     <div className="nm-panel nm-fatigue">
       <div className="nm-panel-head">
         <span>目前疲勞度</span>
-        <b style={ok ? { color } : null}>{ok ? `${pct}%・${label}` : "—"}</b>
+        <b style={ok ? { color } : null}>{ok ? `${pct}%` : "—"}</b>
       </div>
       <div className="nm-track">
         <span className="nm-track-fill" style={{ width: `${pct}%`, background: color }} />
@@ -174,6 +291,9 @@ function Dashboard({ data }) {
           <b>{has(battTemp) ? `${battTemp} °C` : "—"}</b>
         </span>
       </div>
+
+      {/* 電子坐墊（最底下）：長按升降 */}
+      <SeatControl />
     </div>
   );
 }
