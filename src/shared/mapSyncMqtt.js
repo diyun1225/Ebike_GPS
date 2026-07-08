@@ -45,15 +45,20 @@ function ensureClient() {
 export const mapSyncRoom = ROOM;
 
 // 規劃好路線時發一次；retain 讓後台晚點連進來也立刻收到最後這條
-export function publishRoute({ from, to, polyline, distText, durText }) {
+// segments：整條路的分段坡度（與 CAN 輸出同源）＋每段幾何，讓後台照坡度上色
+export function publishRoute({ from, to, polyline, distText, durText, routeId, totalM, maxGrade, segments }) {
   if (!polyline) return;
   const c = ensureClient();
   c.publish(
     T.route,
-    JSON.stringify({ from, to, polyline, summary: { distText, durText } }),
+    JSON.stringify({
+      from, to, polyline, routeId,
+      summary: { distText, durText, totalM, maxGrade },
+      segments: segments || [],
+    }),
     { qos: 1, retain: true }
   );
-  console.log("[mapSync] → 已送路線 (polyline", polyline.length, "字元)");
+  console.log("[mapSync] → 已送路線 (polyline", polyline.length, "字元，分", (segments || []).length, "段)");
 }
 
 // 導航中的即時位置（呼叫端自行節流成每秒一次）

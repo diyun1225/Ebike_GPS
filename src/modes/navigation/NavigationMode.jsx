@@ -155,6 +155,7 @@ export default function NavigationMode({ onBack }) {
   const [speedMult, setSpeedMult] = useState(1); // 加速播放倍率
   const [gps, setGps] = useState(false); // 真實 GPS 導航
   const gpsPrevRef = useRef(null); // 前一個 GPS 位置（算方向用）
+  const compassRef = useRef(null); // 手機羅盤朝向（度，0=北、順時針；轉手機時箭頭跟著轉）
 
   const routeRef = useRef(null); // 模擬用的路線資料(points/elevs/cum/total)
   const simRef = useRef({ distM: 0 }); // 已騎距離
@@ -177,7 +178,7 @@ export default function NavigationMode({ onBack }) {
     dirServiceRef.current = new google.maps.DirectionsService();
     dirRendererRef.current = new google.maps.DirectionsRenderer({
       map: mapRef.current,
-      suppressPolyline: true, // 路線改用我們自己畫的彩色坡度線
+      suppressPolylines: true, // 路線改用我們自己畫的彩色坡度線
     });
     elevServiceRef.current = new google.maps.ElevationService();
     infoWindowRef.current = new google.maps.InfoWindow();
@@ -219,6 +220,10 @@ export default function NavigationMode({ onBack }) {
       polyline: route.polyline,
       distText: route.distText,
       durText: route.durText,
+      routeId: route.routeId,
+      totalM: Math.round(route.total),
+      maxGrade: +route.maxGrade.toFixed(1),
+      segments: route.segProfile, // 整條路分段坡度 + 每段幾何
     });
   }, [phase, sendCan]);
 
@@ -407,6 +412,26 @@ export default function NavigationMode({ onBack }) {
     }
 
     let lastPubT = 0; // 地圖同步：每秒發一次位置
+    let lastOrientT = 0; // 羅盤轉動的發送節流
+    let lastPos = null; // 最後已知位置 {lat,lng,grade}，供轉手機時重發
+
+    // 手機羅盤轉動 → 箭頭跟著轉，並（站著不動也）把新方向發給後台
+    const onOrient = (e) => {
+      let h = null;
+      if (typeof e.webkitCompassHeading === "number") h = e.webkitCompassHeading; // iOS：直接是羅盤朝向
+      else if (e.absolute && typeof e.alpha === "number") h = (360 - e.alpha) % 360; // 一般：alpha 逆時針→轉成順時針
+      if (h == null || isNaN(h)) return;
+      compassRef.current = h;
+      if (riderMarkerRef.current) riderMarkerRef.current.setIcon(arrowIcon(h));
+      const nowMs = performance.now();
+      if (lastPos && nowMs - lastOrientT > 300) {
+        lastOrientT = nowMs;
+        publishGps(lastPos.lat, lastPos.lng, h);
+      }
+    };
+    window.addEventListener("deviceorientationabsolute", onOrient, true);
+    window.addEventListener("deviceorientation", onOrient, true);
+
     const watchId = navigator.geolocation.watchPosition(
       (p) => {
         const here = new google.maps.LatLng(
@@ -432,14 +457,17 @@ export default function NavigationMode({ onBack }) {
           p.coords.speed != null && p.coords.speed >= 0
             ? Math.round(p.coords.speed * 3.6)
             : 0;
-        // 方向（GPS heading，靜止時用上一點推算）
+        // 方向：優先用手機羅盤朝向（轉手機就轉）；沒有羅盤才退回 GPS 行進方向
         let heading =
-          p.coords.heading != null && !isNaN(p.coords.heading)
+          compassRef.current != null
+            ? compassRef.current
+            : p.coords.heading != null && !isNaN(p.coords.heading)
             ? p.coords.heading
             : gpsPrevRef.current
             ? sph.computeHeading(gpsPrevRef.current, here)
             : 0;
         gpsPrevRef.current = here;
+        lastPos = { lat: here.lat(), lng: here.lng(), grade };
 
         riderMarkerRef.current.setPosition(here);
         riderMarkerRef.current.setIcon(arrowIcon(heading));
@@ -519,7 +547,11 @@ export default function NavigationMode({ onBack }) {
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      window.removeEventListener("deviceorientationabsolute", onOrient, true);
+      window.removeEventListener("deviceorientation", onOrient, true);
+    };
   }, [phase, gps, google]);
 
   function toggleRide() {
@@ -545,6 +577,12 @@ export default function NavigationMode({ onBack }) {
     setRiding(false); // 停掉模擬
     startBatteryRef.current = live.battery;
     gpsPrevRef.current = null;
+    compassRef.current = null; // 清掉上一次的羅盤朝向
+    // iOS 13+ 需在使用者手勢中要一次方向感測器權限，否則 deviceorientation 不會觸發
+    const DOE = window.DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === "function") {
+      DOE.requestPermission().catch(() => {});
+    }
     setGps(true);
   }
 
@@ -726,17 +764,41 @@ export default function NavigationMode({ onBack }) {
         );
       }
 
-      const elevResult = await elevServiceRef.current.getElevationAlongPath({
-        path,
-        samples: 512,
-      });
+      // 坡度分段是「加分項」：海拔／幾何服務失敗時退回平地，
+      // 確保路線摘要與「開始導航」按鈕仍照常出現（不會卡在只有地圖、沒按鈕）。
+      let segs = [];
+      let totalDist = legDistVal;
+      let rpts = path;
+      let relevs = path.map(() => 0);
+      try {
+        const elevResult = await elevServiceRef.current.getElevationAlongPath({
+          path,
+          samples: 512,
+        });
+        const built = buildAutoSegments(google, elevResult.results);
+        segs = built.segments;
+        totalDist = built.totalDist;
+        rpts = elevResult.results.map((r) => r.location);
+        relevs = elevResult.results.map((r) => r.elevation);
+        drawSegments(segs);
+      } catch (slopeErr) {
+        console.warn("坡度分段失敗，改用平地估算：", slopeErr);
+        setStatus({ msg: "坡度資料暫時無法取得，已用平地估算距離/電量", error: false });
+        // 退回：畫一條單色路線並框住，確保地圖上仍看得到路徑
+        const line = new google.maps.Polyline({
+          path,
+          strokeColor: "#3a7d55",
+          strokeOpacity: 0.95,
+          strokeWeight: 6,
+          map: mapRef.current,
+        });
+        polylinesRef.current.push(line);
+        const b = new google.maps.LatLngBounds();
+        path.forEach((p) => b.extend(p));
+        boundsRef.current = b;
+        mapRef.current.fitBounds(b);
+      }
 
-      const { segments: segs, totalDist } = buildAutoSegments(
-        google,
-        elevResult.results
-      );
-
-      drawSegments(segs);
       setSegments(segs);
       const totalGain = segs.reduce((a, s) => a + s.gain, 0);
       const estUsedPct = estimateUsedPct({
@@ -745,48 +807,8 @@ export default function NavigationMode({ onBack }) {
         weightKg: weightRef.current,
       });
 
-      // 存一份給模擬騎乘用的路線資料
-      const rpts = elevResult.results.map((r) => r.location);
-      const relevs = elevResult.results.map((r) => r.elevation);
-      const rcum = cumDistances(google, rpts);
-      let acc = 0;
-      const segEnds = segs.map((s) => (acc += s.segDist)); // 每段的累計結束距離
-
-      // 逐步轉彎指示（合併所有 leg 的 steps）
-      let sacc = 0;
-      const steps = legs
-        .flatMap((lg) => lg.steps)
-        .map((st) => ({
-          instruction: stripHtml(st.instructions),
-          maneuver: st.maneuver || "",
-          distVal: st.distance.value,
-        }));
-      const stepEnds = steps.map((s) => (sacc += s.distVal));
-
-      // route_id：該趟導航的唯一識別碼（時間戳記式，每次規劃各不相同）
-      const routeId = makeRouteId();
-
-      // 給網頁地圖同步用：整條路徑壓成 encoded polyline + 起終點/摘要文字
-      routeRef.current = {
-        points: rpts,
-        elevs: relevs,
-        cum: rcum,
-        total: rcum[rcum.length - 1],
-        estUsedPct,
-        segEnds,
-        segments: segs, // 路段坡度資料，進導航時上傳 CAN
-        routeId,
-        steps,
-        stepEnds,
-        legDist: legDistVal,
-        // 地圖同步發送用
-        polyline: google.maps.geometry.encoding.encodePath(path),
-        from: namedStopsNow[0] || "起點",
-        to: namedStopsNow[namedStopsNow.length - 1] || "終點",
-        distText: fmtDist(totalDist),
-        durText: fmtDur(totalDurationSec),
-      };
-
+      // 先設 summary → 底部路線卡（含「開始導航」按鈕）一定會出現。
+      // 這些欄位都不依賴 geometry / 海拔，所以就算下面模擬資料失敗也不影響按鈕。
       setSummary({
         totalDist,
         duration: fmtDur(totalDurationSec),
@@ -794,9 +816,67 @@ export default function NavigationMode({ onBack }) {
         eta: arrivalTime(totalDurationSec),
         totalGain,
         totalLoss: segs.reduce((a, s) => a + s.loss, 0),
-        maxGrade: Math.max(...segs.map((s) => s.grade)),
+        maxGrade: segs.length ? Math.max(...segs.map((s) => s.grade)) : 0,
         estUsedPct,
       });
+
+      // 存一份給模擬騎乘 / 地圖同步用的路線資料（依賴 geometry 服務，屬加分項）。
+      // 這段若失敗，不能連帶讓 summary/按鈕消失，所以獨立 try 包起來。
+      try {
+        const rcum = cumDistances(google, rpts);
+        let acc = 0;
+        const segEnds = segs.map((s) => (acc += s.segDist)); // 每段的累計結束距離
+
+        // 逐步轉彎指示（合併所有 leg 的 steps）
+        let sacc = 0;
+        const steps = legs
+          .flatMap((lg) => lg.steps)
+          .map((st) => ({
+            instruction: stripHtml(st.instructions),
+            maneuver: st.maneuver || "",
+            distVal: st.distance.value,
+          }));
+        const stepEnds = steps.map((s) => (sacc += s.distVal));
+
+        // route_id：該趟導航的唯一識別碼（時間戳記式，每次規劃各不相同）
+        const routeId = makeRouteId();
+
+        // 起終點地名（給地圖同步的 from/to 用）
+        const namedStopsNow = stops.map((s) => s.trim()).filter(Boolean);
+
+        // 給網頁地圖同步用：整條路徑壓成 encoded polyline + 起終點/摘要文字
+        routeRef.current = {
+          points: rpts,
+          elevs: relevs,
+          cum: rcum,
+          total: rcum[rcum.length - 1],
+          estUsedPct,
+          segEnds,
+          segments: segs, // 路段坡度資料，進導航時上傳 CAN
+          routeId,
+          steps,
+          stepEnds,
+          legDist: legDistVal,
+          // 地圖同步發送用
+          polyline: google.maps.geometry.encoding.encodePath(path),
+          from: namedStopsNow[0] || "起點",
+          to: namedStopsNow[namedStopsNow.length - 1] || "終點",
+          distText: fmtDist(totalDist),
+          durText: fmtDur(totalDurationSec),
+          // 整條路的分段坡度（與 CAN 輸出同源）＋每段幾何，讓後台照坡度上色
+          segProfile: segs.map((s) => ({
+            i: s.index,
+            distM: Math.round(s.segDist),
+            grade: +s.grade.toFixed(1),
+            elevDelta: +s.elevChange.toFixed(1),
+            poly: google.maps.geometry.encoding.encodePath(s.locs),
+          })),
+          maxGrade: segs.length ? Math.max(...segs.map((s) => s.grade)) : 0,
+        };
+      } catch (simErr) {
+        console.warn("模擬/地圖同步資料建立失敗（不影響導航按鈕）：", simErr);
+      }
+
       setStatus({
         msg: `完成！自動依坡度分成 ${segs.length} 段`,
         error: false,
@@ -875,9 +955,7 @@ export default function NavigationMode({ onBack }) {
           {summary && (
             <RouteSheet
               summary={summary}
-              segments={segments}
               live={live}
-              onFocusSegment={focusSegment}
               onStartNav={() => setPhase("nav")}
             />
           )}
