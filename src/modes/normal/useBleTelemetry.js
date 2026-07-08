@@ -204,7 +204,7 @@ export function useBleTelemetry() {
         batteryVoltageMv: Math.round(wave(60, 700, 36500)),
         batteryCurrentMa: Math.max(0, Math.round(wave(16, 4000, 8000) + jit(500))),
         batteryTempsC: [Math.round(wave(90, 3, 32)), Math.round(wave(110, 3, 33))],
-        rearGear: { index: 1 + (Math.floor(t / 8) % 7), max: 7 },
+        rearGear: { index: 1 + (Math.floor(t / 8) % 10), max: 10 },
         fatigue,
         fatigueAdvice,
         hr: Math.round(wave(40, 22, 128) + jit(3)), // 心率 bpm

@@ -64,6 +64,46 @@ function stripHtml(html) {
     .trim();
 }
 
+// 產生該趟導航的唯一路線編號：R-yyyyMMdd-HHmmss（每次規劃各不相同、可排序）
+function makeRouteId() {
+  const d = new Date();
+  const p = (n, w = 2) => String(n).padStart(w, "0");
+  return `R-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(
+    d.getHours()
+  )}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// 把分段結果輸出成 txt（CSV，欄位與 AI 板 schema 一致；每列一段）
+function segmentsToTxt(segs, routeId) {
+  const rid =
+    routeId == null ? "" : `"${String(routeId).replace(/"/g, '""')}"`; // 地址可能含逗號，故加引號
+  const header =
+    "route_id,segment_index,segment_distance_m,grade_pct,elevation_delta_m";
+  const rows = segs.map((s) =>
+    [
+      rid,
+      s.index ?? "",
+      Math.round(s.segDist),
+      s.grade.toFixed(2),
+      s.elevChange.toFixed(1),
+    ].join(",")
+  );
+  return [header, ...rows].join("\n");
+}
+
+// 觸發瀏覽器下載一個純文字檔
+function downloadTxt(filename, text) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // 距離 d 處的坡度(%)
 function slopeAt(route, d) {
   const { cum, elevs } = route;
@@ -641,6 +681,12 @@ export default function NavigationMode({ onBack }) {
         travelMode: google.maps.TravelMode.BICYCLING,
       });
       await applyDirections(dirResult);
+      // 分段完成 → 輸出 txt（route_id/segment_index/segment_distance_m/grade_pct/elevation_delta_m）
+      const route = routeRef.current;
+      if (route?.segments?.length) {
+        const name = `${route.routeId || "segments"}.txt`;
+        downloadTxt(name, segmentsToTxt(route.segments, route.routeId));
+      }
       setPhase("preview");
     } catch (err) {
       console.error(err);
@@ -717,9 +763,8 @@ export default function NavigationMode({ onBack }) {
         }));
       const stepEnds = steps.map((s) => (sacc += s.distVal));
 
-      // route_id：用起點→終點地名當識別碼（沒填則 null），送 CAN 表頭用
-      const namedStopsNow = stops.map((s) => s.trim()).filter(Boolean);
-      const routeId = namedStopsNow.length ? namedStopsNow.join(" → ") : null;
+      // route_id：該趟導航的唯一識別碼（時間戳記式，每次規劃各不相同）
+      const routeId = makeRouteId();
 
       // 給網頁地圖同步用：整條路徑壓成 encoded polyline + 起終點/摘要文字
       routeRef.current = {

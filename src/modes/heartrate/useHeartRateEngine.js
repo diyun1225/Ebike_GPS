@@ -9,10 +9,21 @@ const rand = (a, b) => Math.random() * (b - a) + a;
 // 之後接上心跳帶 / 呼吸帶，就把下面的 hr / rr 換成感測器實測值即可。
 const RIDE_EFFORT = 0.4;
 
+// demo 模式的三個強度帶（%HRR 目標）：低 / 中 / 高，讓區間隨機跳動
+const DEMO_BANDS = [
+  [0.30, 0.38], // 低強度（< 40% HRR）
+  [0.43, 0.57], // 中強度（40–59%）
+  [0.63, 0.85], // 高強度（≥ 60%）
+];
+
 // 心肺模式引擎：模擬「每秒一筆生理訊號」並跑流程圖的判定
-export function useHeartRateEngine(base) {
+// demoBand：null=關閉、-1=隨機循環、0/1/2=固定低/中/高強度。
+// 指定固定強度時會「直接」跳到該區間，方便 demo 直接切換低中高。
+export function useHeartRateEngine(base, demoBand = null) {
   const [live, setLive] = useState(null);
   const stateRef = useRef(null);
+  const demoRef = useRef(demoBand);
+  demoRef.current = demoBand; // 讓計時器內永遠讀到最新的 demo 設定
 
   useEffect(() => {
     if (!base) return;
@@ -25,13 +36,53 @@ export function useHeartRateEngine(base) {
       fatigue: 0, // 目前疲勞度 0~100（模擬；之後改吃組員藍牙傳來的值）
       gear: 1, // 目前輔助力段數
       tick: 0,
+      effortTarget: RIDE_EFFORT, // 目前出力目標（demo 時會換）
+      effortHold: 0, // 這個目標還要撐幾個 tick
+      lastBand: null, // 上一輪的 demo 帶，用來偵測切換
+      speed: 20, // demo 車速（km/h）
+      cadence: 70, // demo 踏頻（rpm）
+      batt: 85, // demo 電池電量（%）
     };
 
     const id = setInterval(() => {
       const s = stateRef.current;
       s.tick++;
       const fullSecond = s.tick % 2 === 0; // 500ms 迴圈：每 2 tick = 1 秒
-      const effort = RIDE_EFFORT;
+
+      // demo 決定出力目標
+      const db = demoRef.current;
+      // 切換到指定的低/中/高強度時 → 直接把心率拉到該區間中央
+      if (db !== s.lastBand) {
+        s.lastBand = db;
+        if (db != null && db >= 0) {
+          const [lo, hi] = DEMO_BANDS[db];
+          const mid = (lo + hi) / 2;
+          s.hr = base.restingHr + mid * base.hrr;
+          s.rr = 12 + mid * 24;
+          s.effortTarget = mid;
+          s.effortHold = 0;
+        }
+      }
+      if (db == null) {
+        s.effortTarget = RIDE_EFFORT; // 關閉：回到固定強度
+      } else if (db === -1) {
+        // 隨機循環：撐一段時間後換一個低/中/高帶
+        if (s.effortHold <= 0) {
+          const [lo, hi] = DEMO_BANDS[Math.floor(Math.random() * DEMO_BANDS.length)];
+          s.effortTarget = rand(lo, hi);
+          s.effortHold = Math.round(rand(8, 16)); // 約 4~8 秒
+        }
+        s.effortHold--;
+      } else {
+        // 固定低/中/高：在該帶內小幅抖動，維持在該區間
+        if (s.effortHold <= 0) {
+          const [lo, hi] = DEMO_BANDS[db];
+          s.effortTarget = rand(lo, hi);
+          s.effortHold = Math.round(rand(4, 8));
+        }
+        s.effortHold--;
+      }
+      const effort = s.effortTarget;
 
       if (fullSecond) {
         // 心率朝目標靠攏（有生理延遲），目標 = 安靜 + 出力 × HRR
@@ -52,6 +103,13 @@ export function useHeartRateEngine(base) {
         // 疲勞度：強度高於門檻就累積、低於門檻則慢慢恢復（模擬）
         const load = clamp((s.hr - base.restingHr) / base.hrr, 0, 1);
         s.fatigue = clamp(s.fatigue + (load - 0.35) * 1.2, 0, 100);
+
+        // demo 車輛數據：車速/踏頻跟著強度走（低→高越騎越快），電池慢慢掉
+        const spdTarget = 8 + effort * 34; // 低≈18、高≈35 km/h
+        s.speed = clamp(s.speed + (spdTarget - s.speed) * 0.25 + rand(-1, 1), 0, 50);
+        const cadTarget = 45 + effort * 55; // 低≈65、高≈95 rpm
+        s.cadence = clamp(s.cadence + (cadTarget - s.cadence) * 0.3 + rand(-2, 2), 0, 120);
+        s.batt = clamp(s.batt - (0.05 + effort * 0.1), 0, 100); // 越用力掉越快
       }
 
       // ΔRR：相對約 5 秒前
@@ -78,6 +136,12 @@ export function useHeartRateEngine(base) {
         mode: dir.mode,
         gear: s.gear, // 輔助力段數 1~5，6=無
         can: gearToAssistFrame(s.gear), // 送出用的 CAN 封包（系統實際輸出）
+        // demo 車輛數據：跟著強度走，讓 TeleGrid 在 demo 也有對應數字
+        tele: {
+          speedKph: +s.speed.toFixed(1),
+          cadenceRpm: Math.round(s.cadence),
+          batterySocPct: Math.round(s.batt),
+        },
       });
     }, RAMP_INTERVAL_MS);
 

@@ -3,7 +3,7 @@ import Speedometer from "./Speedometer.jsx";
 import batteryIcon from "../../../assets/icon-battery.png";
 import assistIcon from "../../../assets/icon-bolt.png";
 
-const ASSIST = ["關閉", "ECO", "Tour", "Sport", "Turbo", "Boost"];
+const ASSIST = ["Off", "Eco+", "Eco", "Normal", "Sport", "Sport+"];
 
 // 轉彎動作 → 箭頭
 const ARROW = {

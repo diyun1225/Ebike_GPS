@@ -1,4 +1,4 @@
-const ASSIST = ["關閉", "ECO", "Tour", "Sport", "Turbo", "Boost"];
+const ASSIST = ["Off", "Eco+", "Eco", "Normal", "Sport", "Sport+"];
 
 // 浮在地圖頂端的細長即時數據條
 export default function Telemetry({ live }) {

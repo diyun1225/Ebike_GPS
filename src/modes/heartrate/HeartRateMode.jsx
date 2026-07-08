@@ -72,6 +72,13 @@ function RingGauge({ value, min, max, color, icon, beatDur, num, unit, sub }) {
 // 輔助力段數對應的模式名稱：index = 段位，0=Off
 const ASSIST_LABELS = ["Off", "Eco", "Eco+", "Normal", "Sport", "Sport+"];
 
+// Demo 可直接指定的強度（band 對應引擎的 DEMO_BANDS index）
+const DEMO_OPTS = [
+  { band: 0, label: "低強度" },
+  { band: 1, label: "中強度" },
+  { band: 2, label: "高強度" },
+];
+
 // 輔助力段數：階梯式分段（像排檔）。gear 1~5，6=無輔助（顯示為 0 Off）
 function GearBar({ gear, color }) {
   const total = 5;
@@ -192,9 +199,8 @@ function Dashboard({ base, live, data }) {
 
   return (
     <>
-      {/* 狀態（規格 A/B/C）在上、狀態名稱在下 */}
+      {/* 強度區間名稱（低/中/高強度），沿用原狀態膠囊樣式並放大 */}
       <div className="hr-zonepill" style={{ "--zc": z.color }}>
-        <span className="hr-zonepill-abc">狀態{z.abc}</span>
         <span className="hr-zonepill-name">{z.name}</span>
       </div>
 
@@ -236,8 +242,23 @@ function Dashboard({ base, live, data }) {
 export default function HeartRateMode({ onBack }) {
   const [base, setBase] = useState(null);
   const [confirmExit, setConfirmExit] = useState(false); // 返回確認視窗
-  const { live } = useHeartRateEngine(base);
+  const [demoBand, setDemoBand] = useState(null); // null=關、-1=隨機、0/1/2=低/中/高
+  const [demoOpen, setDemoOpen] = useState(false); // demo 面板是否展開
+  const { live } = useHeartRateEngine(base, demoBand);
   const { data } = useBle(); // 主畫面連好的共用連線，這裡讀車輛數據
+
+  // 選 demo 強度：沒設基準線時先套預設值，再套用選到的強度
+  const pickDemo = (band) => {
+    if (band != null && !base) setBase(computeBaseline(30, 60));
+    setDemoBand(band);
+    setDemoOpen(false);
+  };
+  const demoLabel =
+    demoBand == null
+      ? "Demo"
+      : demoBand === -1
+      ? "Demo・隨機"
+      : `Demo・${DEMO_OPTS.find((o) => o.band === demoBand)?.label}`;
 
   return (
     <div
@@ -252,8 +273,46 @@ export default function HeartRateMode({ onBack }) {
         ‹ 主畫面
       </button>
 
+      {/* Demo 控制：浮在手機框外，點開可直接切低/中/高強度 */}
+      <div className={`hr-demo ${demoBand != null ? "on" : ""}`}>
+        <button
+          className="hr-demo-fab"
+          onClick={() => setDemoOpen((o) => !o)}
+        >
+          {demoLabel}
+        </button>
+        {demoOpen && (
+          <div className="hr-demo-menu">
+            <button
+              className={`hr-demo-item ${demoBand === -1 ? "sel" : ""}`}
+              onClick={() => pickDemo(-1)}
+            >
+              隨機
+            </button>
+            {DEMO_OPTS.map((o) => (
+              <button
+                key={o.band}
+                className={`hr-demo-item ${demoBand === o.band ? "sel" : ""}`}
+                onClick={() => pickDemo(o.band)}
+              >
+                {o.label}
+              </button>
+            ))}
+            <button className="hr-demo-item off" onClick={() => pickDemo(null)}>
+              關閉
+            </button>
+          </div>
+        )}
+      </div>
+
       {!base && <BaselineForm onStart={setBase} />}
-      {base && live && <Dashboard base={base} live={live} data={data} />}
+      {base && live && (
+        <Dashboard
+          base={base}
+          live={live}
+          data={demoBand != null ? live.tele : data}
+        />
+      )}
 
       {confirmExit && (
         <div className="hr-modal-backdrop" onClick={() => setConfirmExit(false)}>

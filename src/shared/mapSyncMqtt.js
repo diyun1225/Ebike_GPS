@@ -27,6 +27,13 @@ function ensureClient() {
     clean: true,
     reconnectPeriod: 3000,
     connectTimeout: 8000,
+    // 遺囑：App 意外關閉/斷網時，broker 自動幫我們發「結束」給後台
+    will: {
+      topic: T.route,
+      payload: JSON.stringify({ end: true }),
+      qos: 1,
+      retain: true,
+    },
   });
   client.on("connect", () => console.log("[mapSync] MQTT 已連線", URL, "房間", ROOM));
   client.on("error", (e) => console.warn("[mapSync] MQTT 錯誤:", e?.message || e));
@@ -59,10 +66,14 @@ export function publishGps(lat, lng, heading) {
   );
 }
 
-// 離開導航時斷線（下次進來再重連）
+// 離開導航：主動通知後台「導航結束」，清掉 retain 的路線，再優雅斷線
 export function endMapSync() {
-  if (client) {
-    client.end(true);
-    client = null;
-  }
+  if (!client) return;
+  const c = client;
+  client = null;
+  // 覆蓋掉 retain 的路線 → 後台會清空地圖；晚點才連進來的後台也只會收到 end
+  c.publish(T.route, JSON.stringify({ end: true }), { qos: 1, retain: true });
+  console.log("[mapSync] → 已通知後台結束導航");
+  // force=false：把上面這則送出去後才真正斷線
+  c.end(false);
 }
