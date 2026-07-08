@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ccpaBleConnect } from "./ble/ccpaBle.js";
+import { parseModeAck } from "../../modeFrame.js";
 
 /*
  * useBleTelemetry — 把 Web Bluetooth 連線包成 React hook。
@@ -40,6 +41,7 @@ export function useBleTelemetry() {
   const [commandedAssist, setCommandedAssist] = useState(null); // 最後一次設定的助力段位（畫面回饋）
 
   const connRef = useRef(null);
+  const ackWaitersRef = useRef([]); // 等待 MODEACK 的 promise resolver 清單
 
   // 高速資料先進這些 ref（notify handler 只做這件事，不碰 React）
   const logBufRef = useRef([]);
@@ -104,6 +106,19 @@ export function useBleTelemetry() {
           snapRef.current = snap; // 只記最新，UI 由計時器統一刷
           dirtyRef.current = true;
         },
+        onFrame: (f) => {
+          // 收到 MODEACK → 喚醒對應的等待者（模式碼相符，或不指定碼的都算）
+          const ack = parseModeAck(f);
+          if (!ack) return;
+          ackWaitersRef.current = ackWaitersRef.current.filter((w) => {
+            if (w.code == null || w.code === ack.code) {
+              clearTimeout(w.timer);
+              w.resolve(ack.ok);
+              return false; // 移除已喚醒的
+            }
+            return true;
+          });
+        },
       });
       connRef.current = conn;
       setCanControl(!!conn.canControl);
@@ -128,6 +143,12 @@ export function useBleTelemetry() {
     setStatus("已斷線");
     setCanControl(false);
     setCommandedAssist(null);
+    // 斷線時把還在等 ACK 的都收掉（當作沒收到），避免懸而未決
+    ackWaitersRef.current.forEach((w) => {
+      clearTimeout(w.timer);
+      w.resolve(false);
+    });
+    ackWaitersRef.current = [];
     stopFlush();
   }, [stopFlush]);
 
@@ -140,6 +161,19 @@ export function useBleTelemetry() {
       buf.unshift(`[${nowStr()}] ✗ 送指令失敗：${e?.message || e}`);
       dirtyRef.current = true;
     }
+  }, []);
+
+  // 等 AI 板回 MODEACK。code=期望的模式碼（傳 null 表示任何 ACK 都算）。
+  // 逾時（預設 2.5s）沒收到 → resolve(false)，不會卡住流程。
+  const waitForModeAck = useCallback((code = null, timeoutMs = 2500) => {
+    return new Promise((resolve) => {
+      const w = { code, resolve, timer: null };
+      w.timer = setTimeout(() => {
+        ackWaitersRef.current = ackWaitersRef.current.filter((x) => x !== w);
+        resolve(false); // 逾時視為沒收到 ACK
+      }, timeoutMs);
+      ackWaitersRef.current.push(w);
+    });
   }, []);
 
   // 變速：升檔 / 降檔
@@ -176,6 +210,7 @@ export function useBleTelemetry() {
     canControl,
     commandedAssist,
     sendCommand,
+    waitForModeAck,
     shiftUp,
     shiftDown,
     setAssist,

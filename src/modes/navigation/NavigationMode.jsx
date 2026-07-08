@@ -88,8 +88,6 @@ export default function NavigationMode({ onBack }) {
 
   // 表單輸入（提升到這層，preview 的路線列也要讀得到）
   const [stops, setStops] = useState(["", ""]);
-  const [rider, setRider] = useState(70);
-  const [cargo, setCargo] = useState(0);
 
   const [segments, setSegments] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -98,7 +96,7 @@ export default function NavigationMode({ onBack }) {
   const [locating, setLocating] = useState(false); // 取得目前位置中
   const [riding, setRiding] = useState(false);
 
-  const weightRef = useRef(70 + BIKE_KG); // 規劃時鎖定的總載重
+  const weightRef = useRef(70 + BIKE_KG); // 預設總載重（騎士 70 + 車身），電量估算基準
   const [sim, setSim] = useState(null); // 騎乘中的即時數據
   const [speedMult, setSpeedMult] = useState(1); // 加速播放倍率
   const [gps, setGps] = useState(false); // 真實 GPS 導航
@@ -570,9 +568,6 @@ export default function NavigationMode({ onBack }) {
       setStatus({ msg: "請至少輸入起點與目的地", error: true });
       return;
     }
-    weightRef.current =
-      (parseFloat(rider) || 0) + (parseFloat(cargo) || 0) + BIKE_KG;
-
     setLoading(true);
     setStatus({ msg: "規劃路線中…", error: false });
     clearRoute();
@@ -738,10 +733,6 @@ export default function NavigationMode({ onBack }) {
           <RouteForm
             stops={stops}
             setStops={setStops}
-            rider={rider}
-            setRider={setRider}
-            cargo={cargo}
-            setCargo={setCargo}
             ready={!!google}
             loading={loading}
             locating={locating}

@@ -24,6 +24,7 @@ export async function ccpaBleConnect(opts) {
   opts = opts || {};
   const onData = opts.onData || function () {};
   const onRaw = opts.onRaw || function () {};
+  const onFrame = opts.onFrame || function () {}; // 每筆解析成功的 {id,dlc,data}（給上層自行判斷 ACK 等）
   const onStatus = opts.onStatus || function () {};
   const onLog = opts.onLog || function () {}; // 診斷 log：①~⑧ 每步都記，方便在手機上看卡在哪
   const deviceName = opts.deviceName || "CCPA-Telemetry";
@@ -83,6 +84,7 @@ export async function ccpaBleConnect(opts) {
           .map((b) => b.toString(16).padStart(2, "0"))
           .join(" ")}]`
       );
+      onFrame(f); // 先把原始解析結果丟給上層（例：MODEACK 確認）
       dec.feed(line); // 解封包
       onData(dec.snapshot(), dec); // 每收到一包就回報最新解碼結果
     }

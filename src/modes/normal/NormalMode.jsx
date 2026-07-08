@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useBleTelemetry } from "./useBleTelemetry.js";
+import { useBle } from "../../ble/BleContext.jsx";
 
 // 沒有數值（null / undefined）時統一顯示破折號
 const fmt = (v, digits = 0) =>
@@ -143,20 +143,17 @@ function Dashboard({ data }) {
 export default function NormalMode({ onBack }) {
   const {
     phase,
-    status,
     data,
     error,
     logLines,
     rawLines,
-    connect,
-    disconnect,
     clearLog,
     canControl,
     commandedAssist,
     shiftUp,
     shiftDown,
     setAssist,
-  } = useBleTelemetry();
+  } = useBle(); // 共用 App 層那條連線（連線在主畫面做，這裡只讀資料）
   const [confirmExit, setConfirmExit] = useState(false);
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
   const connected = phase === "connected";
@@ -172,25 +169,6 @@ export default function NormalMode({ onBack }) {
       </button>
 
       <h1 className="nm-header">一般模式</h1>
-
-      {/* 連線狀態列 */}
-      <div className="nm-conn">
-        <span className={`nm-dot ${connected ? "on" : ""}`} />
-        <span className="nm-conn-status">{status}</span>
-        {connected ? (
-          <button className="nm-btn ghost" onClick={disconnect}>
-            斷線
-          </button>
-        ) : (
-          <button
-            className="nm-btn"
-            onClick={connect}
-            disabled={phase === "connecting"}
-          >
-            {phase === "connecting" ? "連線中…" : "連線裝置"}
-          </button>
-        )}
-      </div>
 
       {error && <div className="nm-error">{error}</div>}
 
@@ -208,7 +186,7 @@ export default function NormalMode({ onBack }) {
       ) : (
         <div className="nm-empty">
           <div className="nm-empty-icon">🚲</div>
-          <p>點「連線裝置」與 CCPA-Telemetry 配對後，即可即時讀取車況數據。</p>
+          <p>尚未連線。請回主畫面點「連線運算板」與 CCPA-Telemetry 配對，即可即時讀取車況數據。</p>
           <p className="nm-empty-hint">
             需 HTTPS 或 localhost；iPhone 請用 Bluefy 瀏覽器開啟。
           </p>
@@ -268,10 +246,7 @@ export default function NormalMode({ onBack }) {
               </button>
               <button
                 className="hr-modal-ok"
-                onClick={() => {
-                  disconnect();
-                  onBack();
-                }}
+                onClick={onBack}
               >
                 離開
               </button>

@@ -3,10 +3,6 @@
 export default function RouteForm({
   stops,
   setStops,
-  rider,
-  setRider,
-  cargo,
-  setCargo,
   ready,
   loading,
   locating,
@@ -73,27 +69,6 @@ export default function RouteForm({
       <button className="rs-add" onClick={addStop}>
         ＋ 新增目的地
       </button>
-
-      <div className="rs-setup-row">
-        <div className="rs-field">
-          <label>騎士體重（kg）</label>
-          <input
-            type="number"
-            min="0"
-            value={rider}
-            onChange={(e) => setRider(e.target.value)}
-          />
-        </div>
-        <div className="rs-field">
-          <label>載貨重量（kg）</label>
-          <input
-            type="number"
-            min="0"
-            value={cargo}
-            onChange={(e) => setCargo(e.target.value)}
-          />
-        </div>
-      </div>
 
       <button className="rs-start" onClick={onPlan} disabled={!canPlan}>
         {loading ? "規劃中…" : ready ? "規劃路線" : "地圖載入中…"}

@@ -3,23 +3,171 @@ import HomeScreen from "./HomeScreen.jsx";
 import NormalMode from "./modes/normal/NormalMode.jsx";
 import NavigationMode from "./modes/navigation/NavigationMode.jsx";
 import HeartRateMode from "./modes/heartrate/HeartRateMode.jsx";
+import { BleProvider, useBle } from "./ble/BleContext.jsx";
+import { modeIdToFrame, MODE_CODE_BY_ID, MODE_LABEL_BY_ID } from "./modeFrame.js";
 
-// 整個 App 的最上層：在主畫面選模式，再切到各模式的程式
+// 整個 App 的最上層：用 BleProvider 讓全 App 共用「一條」與運算板的 BLE 連線，
+// 再在 AppInner 處理「選模式 → 確認 → 送 MODEREQ → 等板子 ACK → 進入」的流程。
 export default function App() {
+  return (
+    <BleProvider>
+      <AppInner />
+    </BleProvider>
+  );
+}
+
+function AppInner() {
+  const ble = useBle();
   const [mode, setMode] = useState(null); // null = 主畫面
+  const [pending, setPending] = useState(null); // 待確認進入的 modeId（顯示確認視窗）
+  // 送封包 / 等 ACK 的即時狀態
+  const [flow, setFlow] = useState({ busy: false, msg: "", error: false });
 
   const backToHome = () => setMode(null);
 
-  if (mode === "normal") return <NormalMode onBack={backToHome} />;
-  if (mode === "navigation") return <NavigationMode onBack={backToHome} />;
-  if (mode === "heartrate") return <HeartRateMode onBack={backToHome} />;
-  if (mode === "suspension")
-    return <ComingSoon title="智慧避震模式" icon="🔧" onBack={backToHome} />;
-  if (mode === "assist")
-    return <ComingSoon title="智慧輔助模式" icon="💪" onBack={backToHome} />;
-  if (mode === "shift")
-    return <ComingSoon title="智慧變速模式" icon="⚙️" onBack={backToHome} />;
-  return <HomeScreen onSelect={setMode} />;
+  // 主畫面點模式 → 先跳確認視窗，還不進入
+  const requestEnter = (modeId) => {
+    setFlow({ busy: false, msg: "", error: false });
+    setPending(modeId);
+  };
+  const cancelEnter = () => {
+    if (flow.busy) return; // 傳送中不讓關
+    setPending(null);
+  };
+  const enterNow = (modeId) => {
+    setPending(null);
+    setFlow({ busy: false, msg: "", error: false });
+    setMode(modeId);
+  };
+
+  // 按「確定」：連線中就送 MODEREQ 並等 ACK；沒連線就直接進入（不通知板子）
+  const confirmEnter = async () => {
+    const modeId = pending;
+    const frame = modeIdToFrame(modeId);
+    const code = MODE_CODE_BY_ID[modeId];
+    const canSend = ble.phase === "connected" && ble.canControl && frame;
+
+    if (!canSend) {
+      enterNow(modeId); // 沒連線 / 無法送 → 直接進入
+      return;
+    }
+
+    try {
+      setFlow({ busy: true, msg: "傳送模式指令給運算板…", error: false });
+      await ble.sendCommand(frame.tx);
+      setFlow({ busy: true, msg: "等待運算板確認（ACK）…", error: false });
+      const ok = await ble.waitForModeAck(code, 2500);
+      if (ok) {
+        enterNow(modeId); // 收到 ACK → 進入
+      } else {
+        setFlow({
+          busy: false,
+          msg: "未收到運算板確認，可重試或直接進入。",
+          error: true,
+        });
+      }
+    } catch (e) {
+      setFlow({
+        busy: false,
+        msg: "送出失敗：" + (e?.message || e),
+        error: true,
+      });
+    }
+  };
+
+  // 目前畫面
+  let screen;
+  if (mode === "normal") screen = <NormalMode onBack={backToHome} />;
+  else if (mode === "navigation") screen = <NavigationMode onBack={backToHome} />;
+  else if (mode === "heartrate") screen = <HeartRateMode onBack={backToHome} />;
+  else if (mode === "suspension")
+    screen = <ComingSoon title="智慧避震模式" icon="🔧" onBack={backToHome} />;
+  else if (mode === "assist")
+    screen = <ComingSoon title="智慧輔助模式" icon="💪" onBack={backToHome} />;
+  else if (mode === "shift")
+    screen = <ComingSoon title="智慧變速模式" icon="⚙️" onBack={backToHome} />;
+  else screen = <HomeScreen onSelect={requestEnter} pending={pending} />;
+
+  return (
+    <>
+      {screen}
+      {pending && (
+        <EnterModal
+          modeId={pending}
+          flow={flow}
+          connected={ble.phase === "connected" && ble.canControl}
+          onConfirm={confirmEnter}
+          onCancel={cancelEnter}
+          onEnterAnyway={() => enterNow(pending)}
+        />
+      )}
+    </>
+  );
+}
+
+// 進入模式的確認視窗：確定 → 送封包 / 等 ACK；逾時可重試或直接進入
+function EnterModal({ modeId, flow, connected, onConfirm, onCancel, onEnterAnyway }) {
+  const label = MODE_LABEL_BY_ID[modeId] || "此模式";
+  const showRecover = flow.error && !flow.busy; // 逾時/失敗 → 顯示重試/直接進入
+
+  return (
+    <div
+      className="enter-modal-backdrop"
+      onClick={flow.busy ? undefined : onCancel}
+    >
+      <div className="enter-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="enter-modal-icon">🚴</div>
+        <h3>
+          確定要進入「{label}」？
+        </h3>
+        <p className="enter-modal-sub">
+          {connected
+            ? "進入後會通知運算板切換模式，並等待板子確認。"
+            : "尚未連線藍牙，將直接進入（不會通知運算板）。"}
+        </p>
+
+        {flow.msg && (
+          <div className={`enter-modal-status ${flow.error ? "err" : ""}`}>
+            {flow.busy && <span className="enter-spin" aria-hidden="true" />}
+            <span>{flow.msg}</span>
+          </div>
+        )}
+
+        <div className="enter-modal-actions">
+          {showRecover ? (
+            <>
+              <button className="enter-btn cancel" onClick={onCancel}>
+                取消
+              </button>
+              <button className="enter-btn ghost" onClick={onEnterAnyway}>
+                直接進入
+              </button>
+              <button className="enter-btn ok" onClick={onConfirm}>
+                重試
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="enter-btn cancel"
+                onClick={onCancel}
+                disabled={flow.busy}
+              >
+                取消
+              </button>
+              <button
+                className="enter-btn ok"
+                onClick={onConfirm}
+                disabled={flow.busy}
+              >
+                {flow.busy ? "處理中…" : "確定"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // 尚未實作的模式：即將推出佔位畫面

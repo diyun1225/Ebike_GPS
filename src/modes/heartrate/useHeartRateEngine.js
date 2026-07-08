@@ -22,6 +22,7 @@ export function useHeartRateEngine(base) {
       rr: 16,
       rrHist: [], // 每秒一筆 RR，用來算 5 秒內變化量
       rrHighDur: 0, // RR > 25 已持續幾秒
+      fatigue: 0, // 目前疲勞度 0~100（模擬；之後改吃組員藍牙傳來的值）
       gear: 1, // 目前輔助力段數
       tick: 0,
     };
@@ -47,6 +48,10 @@ export function useHeartRateEngine(base) {
         s.rrHist.push(s.rr);
         if (s.rrHist.length > 6) s.rrHist.shift(); // 保留約 5 秒
         s.rrHighDur = s.rr > 25 ? s.rrHighDur + 1 : 0;
+
+        // 疲勞度：強度高於門檻就累積、低於門檻則慢慢恢復（模擬）
+        const load = clamp((s.hr - base.restingHr) / base.hrr, 0, 1);
+        s.fatigue = clamp(s.fatigue + (load - 0.35) * 1.2, 0, 100);
       }
 
       // ΔRR：相對約 5 秒前
@@ -64,6 +69,7 @@ export function useHeartRateEngine(base) {
         rr: Math.round(s.rr),
         dRR: +dRR.toFixed(1),
         rrHighDur: s.rrHighDur,
+        fatigue: Math.round(s.fatigue), // 目前疲勞度 0~100
         zone,
         intensity: (s.hr - base.restingHr) / base.hrr,
         state: dir.state,

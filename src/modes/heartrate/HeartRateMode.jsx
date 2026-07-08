@@ -65,6 +65,29 @@ function GearBar({ gear, color }) {
   );
 }
 
+// 目前疲勞度：0~100 的進度條，依高低換色與文字
+function FatigueBar({ value }) {
+  const pct = clamp(Math.round(value ?? 0), 0, 100);
+  const color = pct < 40 ? "#3bb27a" : pct < 70 ? "#e0a92e" : "#e14b5a";
+  const label = pct < 40 ? "良好" : pct < 70 ? "偏高" : "疲勞";
+  return (
+    <div className="hr-fatigue">
+      <div className="hr-fatigue-head">
+        <span>目前疲勞度</span>
+        <b style={{ color }}>
+          {pct}%・{label}
+        </b>
+      </div>
+      <div className="hr-fatigue-track">
+        <div
+          className="hr-fatigue-fill"
+          style={{ width: `${pct}%`, background: color }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // 進入畫面：先建立個人化基準線
 function BaselineForm({ onStart }) {
   const [age, setAge] = useState(30);
@@ -148,27 +171,6 @@ function BaselineForm({ onStart }) {
   );
 }
 
-// 心率區間刻度條 + 目前指針
-function ZoneBar({ live }) {
-  // 30%~89% HRR 對應到刻度條
-  const lo = 0.3;
-  const hi = 0.89;
-  const pos = Math.max(0, Math.min(1, (live.intensity - lo) / (hi - lo))) * 100;
-  return (
-    <div className="hr-zonebar">
-      <div className="hr-zonebar-title">心率強度區間</div>
-      <div className="hr-zonebar-track">
-        <span className="hr-zonebar-cursor" style={{ left: `${pos}%` }} />
-      </div>
-      <div className="hr-zonebar-lbls">
-        <span>低</span>
-        <span>中</span>
-        <span>高</span>
-      </div>
-    </div>
-  );
-}
-
 function Dashboard({ base, live }) {
   const z = live.zone;
   // 愛心跳動週期＝60/心率（越快跳越快）；呼吸 icon 週期＝60/呼吸率
@@ -180,7 +182,7 @@ function Dashboard({ base, live }) {
       {/* 狀態（規格 A/B/C）在上、狀態名稱在下 */}
       <div className="hr-zonepill" style={{ "--zc": z.color }}>
         <span className="hr-zonepill-abc">狀態{z.abc}</span>
-        <span className="hr-zonepill-name">{live.state}</span>
+        <span className="hr-zonepill-name">{z.name}</span>
       </div>
 
       {/* 兩大生理訊號圓圈儀表 */}
@@ -209,7 +211,8 @@ function Dashboard({ base, live }) {
         />
       </div>
 
-      <ZoneBar live={live} />
+      {/* 目前疲勞度 */}
+      <FatigueBar value={live.fatigue} />
 
       {/* 輔助力段數 */}
       <GearBar gear={live.gear} color={z.color} />
@@ -237,8 +240,6 @@ export default function HeartRateMode({ onBack }) {
 
       {!base && <BaselineForm onStart={setBase} />}
       {base && live && <Dashboard base={base} live={live} />}
-
-      <h1 className="hr-header">心肺模式</h1>
 
       {confirmExit && (
         <div className="hr-modal-backdrop" onClick={() => setConfirmExit(false)}>

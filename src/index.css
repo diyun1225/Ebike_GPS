@@ -1058,6 +1058,10 @@ button:disabled {
 /* 心肺模式：各區塊由上而下依序淡入 */
 .dash.hr > * {
   animation: sectionIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Safari 有時不會在元素掛載當下排程進場動畫，內容就停在 opacity:0，
+     要點一下畫面觸發重繪才顯示。用 will-change 促使先建立合成圖層，
+     讓動畫在掛載時就啟動，避免「點空白處才出現」。 */
+  will-change: opacity, transform;
 }
 .dash.hr > *:nth-child(1) {
   animation-delay: 0.05s;
@@ -1161,14 +1165,40 @@ button:disabled {
   transition: --zc 0.6s ease;
 }
 
-/* 頁尾品牌字：低調的小灰字，不搶戲 */
-.hr-header {
-  text-align: center;
-  font-size: 12px;
+/* 目前疲勞度 */
+.hr-fatigue {
+  margin-top: 18px;
+  background: #fff;
+  border: 1px solid #f7d5db;
+  border-radius: 14px;
+  padding: 12px 14px 14px;
+  box-shadow: 0 4px 14px rgba(230, 57, 80, 0.05);
+}
+.hr-fatigue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.hr-fatigue-head span {
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 4px;
-  color: #b89098;
-  margin: 22px 0 2px;
+  color: #a86b78;
+}
+.hr-fatigue-head b {
+  font-size: 14px;
+  font-weight: 800;
+}
+.hr-fatigue-track {
+  height: 12px;
+  border-radius: 8px;
+  background: #f3d9de;
+  overflow: hidden;
+}
+.hr-fatigue-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.4s ease, background 0.4s ease;
 }
 
 /* 基準線設定 */
@@ -1327,6 +1357,182 @@ button:disabled {
     opacity: 0;
     transform: scale(0.86);
   }
+}
+
+/* ── 進入模式確認視窗（App 層，送 MODEREQ / 等 ACK）───────────── */
+.enter-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  /* 必須高於 .mode-flood(2000)：點模式後擴散色會鋪滿整個畫面，
+     若確認視窗在它底下就會被蓋住看不到，導致「點了模式只剩一片純色、
+     怎麼點都沒反應」。放到 flood 之上，確認視窗才會浮在擴散色上面。 */
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26px;
+  background: rgba(30, 40, 46, 0.42);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: hrFadeIn 0.2s ease;
+}
+.enter-modal {
+  width: 100%;
+  max-width: 320px;
+  background: #fff;
+  border-radius: 22px;
+  padding: 24px 22px 18px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(30, 40, 46, 0.32);
+  animation: hrModalPop 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.enter-modal-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+.enter-modal h3 {
+  font-size: 19px;
+  font-weight: 800;
+  color: #26343b;
+  margin: 10px 0 6px;
+}
+.enter-modal-sub {
+  font-size: 13px;
+  color: #6b7a82;
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+.enter-modal-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c7a5a;
+  background: #e9f6ef;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+.enter-modal-status.err {
+  color: #b23b2e;
+  background: #fdecea;
+}
+.enter-spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(44, 122, 90, 0.35);
+  border-top-color: #2c7a5a;
+  border-radius: 50%;
+  animation: enterSpin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes enterSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.enter-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+.enter-btn {
+  flex: 1;
+  margin: 0;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 8px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+}
+.enter-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.enter-btn.cancel {
+  background: #eceff1;
+  color: #55636b;
+}
+.enter-btn.cancel:hover:not(:disabled) {
+  background: #e0e5e8;
+}
+.enter-btn.ghost {
+  background: #dfe7ff;
+  color: #35507e;
+}
+.enter-btn.ghost:hover:not(:disabled) {
+  background: #cfddff;
+}
+.enter-btn.ok {
+  background: #2fa860;
+}
+.enter-btn.ok:hover:not(:disabled) {
+  background: #268a4f;
+}
+
+/* ── 主畫面：運算板連線狀態按鈕 ─────────────────────────────── */
+.home-ble {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: auto;
+  z-index: 40;
+  width: max-content;
+  max-width: calc(100% - 28px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 13px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #45555e;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 3px 10px rgba(30, 40, 46, 0.18);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.home-ble.on {
+  color: #1f7a4d;
+  background: rgba(233, 246, 239, 0.92);
+  padding: 7px 13px;
+}
+.home-ble-txt {
+  white-space: nowrap;
+}
+.home-ble-btn {
+  flex: none;
+  width: auto;
+  margin-top: 0;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #2fa860;
+  cursor: pointer;
+}
+.home-ble-btn:hover:not(:disabled) {
+  background: #268a4f;
+}
+.home-ble-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+.home-ble-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #c1ccd2;
+  flex: none;
+}
+.home-ble-dot.on {
+  background: #2fa860;
+  box-shadow: 0 0 0 3px rgba(47, 168, 96, 0.22);
 }
 
 /* 燈號區間 pill */

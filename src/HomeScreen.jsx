@@ -1,7 +1,8 @@
 // 主畫面：選擇要進入哪個模式
 // 新增模式時，在這個陣列加一筆、再到 App.jsx 接上對應元件即可。
 // id 是「路由用」的代號（不要亂改，App.jsx 靠它切換）；圖是 Canva 做好的按鈕（圓圈+icon+文字都在裡面）。
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useBle } from "./ble/BleContext.jsx";
 import normalImg from "./assets/mode-normal.png";
 import batteryImg from "./assets/mode-battery.png";
 import heartImg from "./assets/mode-heart.png";
@@ -68,10 +69,20 @@ const MODES = [
   },
 ];
 
-export default function HomeScreen({ onSelect }) {
+export default function HomeScreen({ onSelect, pending }) {
   const [picked, setPicked] = useState(null); // 已選的模式 id（播放動畫用）
   // 擴散轉場：從被點的按鈕中心，用該模式的顏色鋪滿整個畫面
   const [flood, setFlood] = useState(null); // { color, x, y }
+  const ble = useBle();
+  const connected = ble.phase === "connected";
+
+  // 確認視窗被取消（pending 清空但沒真的進入）→ 把動畫狀態復原，避免卡在擴散畫面
+  useEffect(() => {
+    if (!pending) {
+      setPicked(null);
+      setFlood(null);
+    }
+  }, [pending]);
 
   const choose = (e, m) => {
     if (!m.enabled || picked) return; // 動畫播放中不重複觸發
@@ -99,6 +110,22 @@ export default function HomeScreen({ onSelect }) {
           style={{ left: flood.x, top: flood.y, background: flood.color }}
         />
       )}
+
+      <div className={`home-ble ${connected ? "on" : ""}`}>
+        <span className={`home-ble-dot ${connected ? "on" : ""}`} />
+        <span className="home-ble-txt">
+          {connected ? "自行車已連線" : "自行車未連線"}
+        </span>
+        {!connected && (
+          <button
+            className="home-ble-btn"
+            onClick={ble.connect}
+            disabled={ble.phase === "connecting"}
+          >
+            {ble.phase === "connecting" ? "連線中…" : "連線"}
+          </button>
+        )}
+      </div>
 
       <div className="home2-head">
         <h1 className="home2-title">E-bike 模式選擇</h1>
