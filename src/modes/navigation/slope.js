@@ -34,18 +34,49 @@ function cumulative(google, locs) {
   return cum;
 }
 
-// 由 index 範圍產生一段的統計資料
-function makeSegment(elevs, cum, startIdx, endIdx, index) {
-  const startElev = elevs[startIdx].elevation;
-  const endElev = elevs[endIdx].elevation;
+// 真實道路坡度極限，超過一律視為雜訊（橋樑/高架下的地面高程亂跳造成）
+const GRADE_CAP = 30;
+const clampGrade = (g) => Math.max(-GRADE_CAP, Math.min(GRADE_CAP, g));
+
+// 中位數平滑：去掉單點爆刺（Google 高程在橋/高架/過河會瞬間跳到橋下地面）
+function medianSmooth(vals, k = 5) {
+  const half = Math.floor(k / 2);
+  const out = new Array(vals.length);
+  for (let i = 0; i < vals.length; i++) {
+    const a = Math.max(0, i - half);
+    const b = Math.min(vals.length - 1, i + half);
+    const win = vals.slice(a, b + 1).sort((x, y) => x - y);
+    out[i] = win[Math.floor(win.length / 2)];
+  }
+  return out;
+}
+
+// 最小平方法：把整段的 (水平距離, 高程) 擬合成一條線取斜率(%)
+// 比「只看頭尾兩點」抗噪很多——單顆壞點不會帶歪整段
+function regressionGrade(cum, elev, startIdx, endIdx) {
+  let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = startIdx; i <= endIdx; i++) {
+    const x = cum[i], y = elev[i];
+    n++; sx += x; sy += y; sxx += x * x; sxy += x * y;
+  }
+  const denom = n * sxx - sx * sx;
+  if (n < 2 || denom === 0) return 0;
+  return ((n * sxy - sx * sy) / denom) * 100; // 斜率(m/m) → %
+}
+
+// 由 index 範圍產生一段的統計資料（elevVals 為平滑後的高程陣列）
+function makeSegment(elevs, elevVals, cum, startIdx, endIdx, index) {
+  const startElev = elevVals[startIdx];
+  const endElev = elevVals[endIdx];
   const elevChange = endElev - startElev;
   const segDist = cum[endIdx] - cum[startIdx];
-  const grade = segDist > 0 ? (elevChange / segDist) * 100 : 0;
+  // 坡度：整段最小平方擬合（抗噪）＋封頂到合理範圍
+  const grade = clampGrade(regressionGrade(cum, elevVals, startIdx, endIdx));
 
   let gain = 0;
   let loss = 0;
   for (let i = startIdx; i < endIdx; i++) {
-    const d = elevs[i + 1].elevation - elevs[i].elevation;
+    const d = elevVals[i + 1] - elevVals[i];
     if (d > 0) gain += d;
     else loss += -d;
   }
@@ -58,11 +89,12 @@ function makeSegment(elevs, cum, startIdx, endIdx, index) {
 export function buildSegments(google, elevs, nSegments) {
   const N = elevs.length;
   const cum = cumulative(google, elevs.map((r) => r.location));
+  const elevVals = medianSmooth(elevs.map((r) => r.elevation));
   const segments = [];
   for (let s = 0; s < nSegments; s++) {
     const startIdx = Math.round((s * (N - 1)) / nSegments);
     const endIdx = Math.round(((s + 1) * (N - 1)) / nSegments);
-    segments.push(makeSegment(elevs, cum, startIdx, endIdx, s + 1));
+    segments.push(makeSegment(elevs, elevVals, cum, startIdx, endIdx, s + 1));
   }
   return { segments, totalDist: cum[N - 1] };
 }
@@ -72,7 +104,7 @@ export function buildSegments(google, elevs, nSegments) {
 export function buildAutoSegments(google, elevs, opts = {}) {
   const N = elevs.length;
   const locs = elevs.map((r) => r.location);
-  const elev = elevs.map((r) => r.elevation);
+  const elev = medianSmooth(elevs.map((r) => r.elevation)); // 平滑去爆刺
   const cum = cumulative(google, locs);
   const total = cum[N - 1];
 
@@ -87,7 +119,7 @@ export function buildAutoSegments(google, elevs, opts = {}) {
     while (a > 0 && cum[i] - cum[a] < WINDOW / 2) a--;
     while (b < N - 1 && cum[b] - cum[i] < WINDOW / 2) b++;
     const d = cum[b] - cum[a];
-    const g = d > 0 ? ((elev[b] - elev[a]) / d) * 100 : 0;
+    const g = d > 0 ? clampGrade(((elev[b] - elev[a]) / d) * 100) : 0;
     cat[i] = gradeCategory(g);
   }
 
@@ -122,6 +154,6 @@ export function buildAutoSegments(google, elevs, opts = {}) {
     }
   }
 
-  const segments = ranges.map((r, i) => makeSegment(elevs, cum, r[0], r[1], i + 1));
+  const segments = ranges.map((r, i) => makeSegment(elevs, elev, cum, r[0], r[1], i + 1));
   return { segments, totalDist: total };
 }

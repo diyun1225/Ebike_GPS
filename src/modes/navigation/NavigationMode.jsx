@@ -735,7 +735,7 @@ export default function NavigationMode({ onBack }) {
         origin,
         destination,
         waypoints,
-        travelMode: google.maps.TravelMode.BICYCLING,
+        travelMode: google.maps.TravelMode.DRIVING, // 與同學的 PoC 一致（自行車模式會鑽小路、路徑不同）
       });
       await applyDirections(dirResult);
       // 分段完成 → 輸出 txt（route_id/segment_index/segment_distance_m/grade_pct/elevation_delta_m）
