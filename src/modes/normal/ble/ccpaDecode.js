@@ -20,6 +20,7 @@ const ID = {
   BAT1_INFO01ACK: 0x1e942444, BAT1_INFO01BRO: 0x1e942446,
   BAT1_INFO06ACK: 0x1e942458, BAT1_INFO06BRO: 0x1e94245a,
   REARDERAILLEUR_INFO00ACK: 0x1e944840, REARDERAILLEUR_INFO00BRO: 0x1e944842,
+  DERAILLEUR_STATE: 0x650, // 實測此車：後變速器狀態，data[0]=目前檔位（GearIndex）
 };
 
 // 來源優先序：GENERAL_INFO 一旦給過值就鎖定，忽略 DEVICE 來源的同名值（避免兩邊打架）。
@@ -135,6 +136,11 @@ export class CcpaDecoder {
       case ID.REARDERAILLEUR_INFO00ACK:
       case ID.REARDERAILLEUR_INFO00BRO:
         if (dlc >= 2) { s.rearGearIndex = d[0]; s.rearGearMax = d[1]; s.rearGearValid = true; s.rearGearSource = SRC.DEVICE; }
+        break;
+
+      case ID.DERAILLEUR_STATE:
+        // 實測此車走這個 ID：data[0]=目前檔位。總檔數不在這包，維持 0 → UI 用 SHIFT_FALLBACK_MAX。
+        if (dlc >= 1) { s.rearGearIndex = d[0]; s.rearGearValid = true; s.rearGearSource = SRC.DEVICE; }
         break;
 
       default:
