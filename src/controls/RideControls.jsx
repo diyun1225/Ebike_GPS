@@ -12,6 +12,8 @@ import {
   ASSIST_MAX,
   SUSPENSION_MIN,
   SUSPENSION_MAX,
+  SHIFT_MIN,
+  SHIFT_MAX,
   SHIFT_FALLBACK_MAX,
 } from "./rideControlsConfig.js";
 
@@ -31,7 +33,8 @@ export default function RideControls({ mode }) {
   const [gear, setGearLocal] = useState(1);
 
   const snap = ble.data;
-  const gearMax = snap?.rearGear?.max || SHIFT_FALLBACK_MAX;
+  // 車子回報的檔數為準，但只開放到 SHIFT_MAX（第 10 檔不開放）；拿不到遙測用備援上限。
+  const gearMax = Math.min(SHIFT_MAX, snap?.rearGear?.max || SHIFT_FALLBACK_MAX);
 
   // 遙測有值就同步過來（輔助力、目前檔位是「車子說了算」）
   useEffect(() => {
@@ -115,7 +118,10 @@ export default function RideControls({ mode }) {
     ble.setSuspension(lv);
   };
   const doShift = (dir) => {
-    setGearLocal((g) => clamp(g + dir, 1, gearMax));
+    // 已在邊界（1 檔或最高檔）就不送指令，避免對車子送無效升/降檔
+    const next = clamp(gear + dir, SHIFT_MIN, gearMax);
+    if (next === gear) return;
+    setGearLocal(next);
     if (dir > 0) ble.shiftUp();
     else ble.shiftDown();
   };
@@ -209,7 +215,7 @@ export default function RideControls({ mode }) {
             {autoKey ? (
               <>⚡ {CONTROL_LABEL[autoKey]}由此模式自動控制</>
             ) : (
-              <>三項皆可手動調整</>
+              <> </>
             )}
             {!connected && <span className="rc-foot-off">・未連線（僅畫面預覽）</span>}
           </div>

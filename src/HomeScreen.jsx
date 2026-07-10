@@ -118,8 +118,16 @@ export default function HomeScreen({ onSelect, pending }) {
             ? "模擬資料中"
             : connected
             ? "自行車已連線"
+            : ble.phase === "connecting"
+            ? ble.status || "連線中…"
             : "自行車未連線"}
         </span>
+        {/* 連線失敗/取消時把原因秀出來，否則使用者完全不知道卡在哪 */}
+        {!connected && !ble.isDemo && ble.phase !== "connecting" && ble.error && (
+          <span className="home-ble-err" title={ble.error}>
+            ⚠ {ble.error}
+          </span>
+        )}
         {ble.isDemo ? (
           <button className="home-ble-btn ghost" onClick={ble.stopDemo}>
             停止

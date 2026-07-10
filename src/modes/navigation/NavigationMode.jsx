@@ -3,7 +3,6 @@ import { useGoogleMaps } from "./useGoogleMaps.js";
 import { buildAutoSegments, gradeColor, fmtDist } from "./slope.js";
 import { estimateUsedPct, arrivalTime } from "./battery.js";
 import { routeProfileFrames, segmentToFrame } from "./canRoute.js";
-import { useLiveTelemetry } from "../../shared/useLiveTelemetry.js";
 import { publishRoute, publishGps, endMapSync } from "../../shared/mapSyncMqtt.js";
 import { useBle } from "../../ble/BleContext.jsx";
 import RouteForm from "./components/RouteForm.jsx";
@@ -115,8 +114,20 @@ function slopeAt(route, d) {
 
 export default function NavigationMode({ onBack }) {
   const { google, error: loadError } = useGoogleMaps(API_KEY);
-  const live = useLiveTelemetry();
-  const ble = useBle(); // 主畫面連好的共用連線，用來把坡度資料送 CAN 給 AI 板
+  const ble = useBle(); // 主畫面連好的共用連線：讀真車數據 + 送坡度 CAN 給 AI 板
+
+  // 車況一律用「真車」ble.data（做法與一般模式一致：直接讀 data，不另外卡 phase）。
+  // 沒連線 / 還沒收到車況時 data 為 null，各欄位就變 null → 畫面顯示 --。
+  // （路線相關：剩餘距離 / 轉彎 / 坡度 仍由下方模擬或 GPS 推進計算。）
+  const bd = ble.data;
+  const live = {
+    battery: bd?.batterySocPct ?? null,
+    speed: bd?.speedKph ?? null,
+    cadence: bd?.cadenceRpm ?? null,
+    assist: bd?.assistLevel ?? null,
+    motorTemp: bd?.motorTempC ?? null,
+    voltage: bd?.batteryVoltageMv != null ? bd.batteryVoltageMv / 1000 : null,
+  };
 
   // 用 ref 拿最新的 ble，讓 sendCan 保持穩定（不必進各效果的相依陣列）。
   // 沒連線 / 沒控制特徵 / 模擬中沒真板時，都靜默略過（sendCommand 內部會安全 no-op）。
@@ -566,7 +577,7 @@ export default function NavigationMode({ onBack }) {
     // 重新開始（首次或已抵達）
     if (!sim || sim.finished) {
       simRef.current = { distM: 0 };
-      startBatteryRef.current = live.battery;
+      startBatteryRef.current = live.battery ?? 86; // 沒連車用預設值當模擬起點
       setSim(null);
     }
     setRiding(true);
@@ -578,7 +589,7 @@ export default function NavigationMode({ onBack }) {
       return;
     }
     setRiding(false); // 停掉模擬
-    startBatteryRef.current = live.battery;
+    startBatteryRef.current = live.battery ?? 86;
     gpsPrevRef.current = null;
     compassRef.current = null; // 清掉上一次的羅盤朝向
     // iOS 13+ 需在使用者手勢中要一次方向感測器權限，否則 deviceorientation 不會觸發
@@ -984,7 +995,14 @@ export default function NavigationMode({ onBack }) {
       {/* 第三步：開始導航 → 車況儀表板 */}
       {phase === "nav" && (
         <NavOverlay
-          live={sim || live}
+          live={{
+            ...live, // 車況（電量/車速/踏頻/輔助/馬達溫/電壓）= 真車或 --
+            // 路線相關來自模擬 / GPS 推進；沒在騎就留空
+            grade: sim?.grade ?? null,
+            instruction: sim?.instruction ?? "",
+            maneuver: sim?.maneuver ?? "straight",
+            turnM: sim?.turnM ?? 0,
+          }}
           summary={summary}
           riding={riding}
           gps={gps}

@@ -7,9 +7,11 @@
 </head>
 <body>
   <h3>CCPA 車況(BLE)</h3>
-  <button id="connectBtn">連線</button>
+  <button id="connectBtn">連線 單車</button>
+  <button id="connectAiBtn">連線毫米波板</button>
   <button id="clearBtn">清空</button>
-  <p id="status">尚未連線</p>
+  <p id="status">單車:尚未連線</p>
+  <p id="aiStatus">毫米波板:尚未連線</p>
 
   <h4>控制</h4>
   <button id="shiftUpBtn" disabled>升檔 ▲</button>
@@ -22,6 +24,26 @@
     <button class="assistBtn" data-level="3" disabled>3 normal</button>
     <button class="assistBtn" data-level="4" disabled>4 sport</button>
     <button class="assistBtn" data-level="5" disabled>5 sport+</button>
+  </p>
+
+  <p>自訂協議(Phone/IoT/AI)測試:
+    <button id="modeTxBtn" disabled>切傳送模式</button>
+    <button id="modeRxBtn" disabled>切回傳模式</button>
+    <span id="modeAck">(等組員回 OK)</span>
+  </p>
+
+  <p>騎乘模式(SET_MODE 0x1FA13000,每顆送不同 payload d0=模式碼):
+    <button class="rideModeBtn" data-mode="1" disabled>1 一般</button>
+    <button class="rideModeBtn" data-mode="2" disabled>2 電量管理</button>
+    <button class="rideModeBtn" data-mode="3" disabled>3 智慧輔助</button>
+    <button class="rideModeBtn" data-mode="4" disabled>4 智慧變速</button>
+    <button class="rideModeBtn" data-mode="5" disabled>5 智慧避震</button>
+    <span id="rideModeAck">(未選)</span>
+  </p>
+
+  <p>電子坐墊 Dropper(0x2940035,長按=解鎖 / 放開=鎖定):
+    <button id="dropperBtn" style="touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none" disabled>🔓 長按解鎖(放開鎖定)</button>
+    <span id="dropperState">🔒 鎖定</span>
   </p>
 
   <p>原始指令(組員輸出的字串直接貼這裡送):
@@ -53,10 +75,28 @@
     let rxChar = null; // 連線後拿到,用來送控制指令(SHIFT,UP / SHIFT,DOWN …)
     let commandedAssist = null; // 我們最後一次按的助力段位(這台車不回報段位,用它當畫面回饋)
 
+    // 騎乘模式(自訂協議 SET_MODE 0x1FA13000):DLC=1,payload 就是模式碼(1~5)
+    const RIDE_MODE_ID = "1FA13000";          // IoT→AI 命令 ID(hex 字串,直接塞進 CAN,<id>,...)
+    const RIDE_MODE_ACK_ID = 0x1FA23000;      // AI→IoT 回覆 ID(DATA= AA <模式碼>)
+    const RIDE_MODE_NAMES = { 1: "一般", 2: "電量管理", 3: "智慧輔助", 4: "智慧變速", 5: "智慧避震" };
+    let commandedRideMode = null;              // 最後一次按的模式(當畫面回饋)
+
+    // 電子坐墊 Dropper:網頁只送文字指令,實際 CAN frame(0x2940035:From Who/Sequence/
+    // Dropper Control)由 ESP32 control.cpp 的 control_set_dropper() 組出並送上匯流排。
+    //   長按 → "DROPPER,UNLOCK"(開閥=解鎖) / 放開 → "DROPPER,LOCK"(關閥=鎖定)
+    let dropperHeld = false;                   // 目前是否按住(避免重複送 open/close)
+
+    // 電子變速:目前檔位來自 Derailleur State 0x650(byte0=GearIndex)。這台實體 10 檔,只用 1~9。
+    const GEAR_MIN = 1, GEAR_MAX = 9;
+    let gearNow = null;                         // 目前檔位(0x650 讀回,權威值)
+    let gearHoldUntil = 0;                      // 剛手動變速後,短暫先信樂觀估計(讀回 500ms 才更新,避免連按超出)
+
     const dec = new CcpaDecoder();
     const td = new TextDecoder();
     let buf = "";
     let notifyCount = 0;
+    let fragDropped = 0;   // 被 BLE 切斷、拼不回整行的碎片數(MTU 小+送太密造成,非資料遺失)
+    let lastFragLog = 0;
 
     // ── 診斷 log:每個節點都記一筆,最新在最上面 ──────────────────────────
     const logLines = [];
@@ -83,9 +123,32 @@
       return name ? `${lvl} (${name})` : String(lvl);
     }
 
+    // ── AI 板生理量測(心率 HR / 呼吸率 RR / FI)────────────────────────
+    // 走同一個 TX 特徵(UUID 相同),但送的是純 JSON 一行(不是 ID= 的 CAN 封包),例:
+    //   {"hr":72,"rr":16,"fi":0.83}
+    // 欄位名大小寫都接受;這包沒帶到的欄位就保留上一次的值。
+    const vitals = { hr: null, rr: null, fi: null };
+    function updateVitals(obj) {
+      const pick = (key) => {
+        for (const k of Object.keys(obj)) {
+          if (k.toLowerCase() === key) { const n = Number(obj[k]); return Number.isFinite(n) ? n : null; }
+        }
+        return undefined;                    // undefined = 這包根本沒帶這欄(保留舊值)
+      };
+      const hr = pick("hr"), rr = pick("rr"), fi = pick("fi");
+      if (hr !== undefined) vitals.hr = hr;
+      if (rr !== undefined) vitals.rr = rr;
+      if (fi !== undefined) vitals.fi = fi;
+    }
+
     // ── 解碼後顯示 ──────────────────────────────────────────────────────
     function show() {
       const s = dec.snapshot();
+      // 目前檔位:0x650 讀回是權威值,但剛手動變速後 gearHoldUntil 前先信樂觀估計
+      // (Derailleur State 每 500ms 才更新,不 hold 的話連按會被舊值放行而超出 9 檔)。
+      if (s.rearGear && s.rearGear.index != null && Date.now() >= gearHoldUntil) {
+        gearNow = s.rearGear.index;
+      }
       document.getElementById("out").textContent =
         "車速     : " + (s.speedKph        ?? "--") + " kph\n" +
         "踏頻     : " + (s.cadenceRpm       ?? "--") + " rpm\n" +
@@ -98,7 +161,10 @@
         "電壓     : " + (s.batteryVoltageMv ?? "--") + " mV\n" +
         "電流     : " + (s.batteryCurrentMa ?? "--") + " mA\n" +
         "電池溫度 : " + s.batteryTempsC.map(x => x ?? "--").join(", ") + " C\n" +
-        "後檔位   : " + (s.rearGear ? s.rearGear.index + "/" + s.rearGear.max : "--");
+        "目前檔位 : " + (gearNow != null ? gearNow + " / " + GEAR_MAX + "(車回報最大 " + (s.rearGear ? s.rearGear.max : "--") + ")" : "--") + "\n" +
+        "心率 HR  : " + (vitals.hr ?? "--") + " bpm\n" +
+        "呼吸率 RR: " + (vitals.rr ?? "--") + " brpm\n" +
+        "FI       : " + (vitals.fi ?? "--");
     }
 
     // ── 節點 ⑦⑧:收到 BLE → 切行 → 解析 → 解碼 ──────────────────────────
@@ -114,14 +180,130 @@
         const line = buf.slice(0, i).trim();
         buf = buf.slice(i + 1);
         if (!line) continue;
+
+        // 韌體狀態訊息(# 開頭,例:# CMD ... -> sent)→ 當訊息看,不當封包解析
+        if (line.startsWith("#")) { log("ℹ " + line); continue; }
+
+        // AI 板生理量測是純 JSON 一行({ 開頭),不是 ID= 的 CAN 封包 → 解 JSON 取 HR/RR/FI
+        if (line.startsWith("{")) {
+          try {
+            const obj = JSON.parse(line);
+            updateVitals(obj);
+            log("♥ 生理量測:" + JSON.stringify(obj));
+            show();
+            continue;
+          } catch (e) {
+            // 不是完整 JSON(可能被 BLE 切斷)→ 往下當碎片處理
+          }
+        }
+
+        // 只有 "ID=" 開頭才是完整封包。其餘是被 BLE 切斷、拼不回整行的碎片
+        // (這支手機 MTU 只有 17 bytes + 韌體送太密 → 偶爾漏接中間小包)。
+        // 安靜丟掉、不洗版;碎片≠資料遺失,完整那行照樣解得出來。每 2 秒才回報一次累計數。
+        if (!line.startsWith("ID=")) {
+          fragDropped++;
+          const now = Date.now();
+          if (now - lastFragLog > 2000) { lastFragLog = now; log(`(略過 BLE 碎片,累計 ${fragDropped})`); }
+          continue;
+        }
         showRaw(line);
 
         const f = CcpaDecoder.parseRawLine(line);
-        if (!f) { log(`⑧ ✗ 解析失敗(格式不符):${JSON.stringify(line)}`); continue; }
+        if (!f) {
+          fragDropped++;
+          const now = Date.now();
+          if (now - lastFragLog > 2000) { lastFragLog = now; log(`(略過 BLE 碎片,累計 ${fragDropped})`); }
+          continue;
+        }
         log(`⑧ 解析 OK:id=0x${f.id.toString(16).toUpperCase()} dlc=${f.dlc} data=[${f.data.map(b => b.toString(16).padStart(2, "0")).join(" ")}]`);
+
+        // 自訂協議:組員回的 OK(0x1FA2000X DATA=AA)→ 更新畫面
+        if ((f.id === 0x1FA20001 || f.id === 0x1FA20002) && f.data[0] === 0xAA) {
+          const nm = f.id === 0x1FA20001 ? "傳送模式" : "回傳模式";
+          const t = new Date().toLocaleTimeString();
+          document.getElementById("modeAck").textContent = `✓ 組員回 OK:${nm} @${t}`;
+          log(`✓ 組員回 OK:${nm}`);
+          continue;   // 不是 CCPA 車況,不用進解碼器
+        }
+
+        // 自訂協議:騎乘模式 ACK(0x1FA23000 DATA= AA <模式碼>)→ 更新畫面
+        if (f.id === RIDE_MODE_ACK_ID && f.data[0] === 0xAA) {
+          const m = f.data[1];
+          const nm = RIDE_MODE_NAMES[m] || "?";
+          const t = new Date().toLocaleTimeString();
+          document.getElementById("rideModeAck").textContent = `✓ 已切換:${m} ${nm} @${t}`;
+          log(`✓ 組員回 OK:騎乘模式 ${m} ${nm}`);
+          continue;   // 不是 CCPA 車況,不用進解碼器
+        }
 
         dec.feed(line);   // 解封包
         show();           // 更新「解碼後車況」
+      }
+    }
+
+    // ── AI 板(架構B:第二台 BLE)收到 JSON → 切行 → 解 HR/RR/FI ───────────
+    // 用獨立的行緩衝 bufAi,跟單車的 buf 分開,兩台的碎片才不會互相污染。
+    let bufAi = "";
+    let aiNotifyCount = 0;
+    function onNotifyAi(e) {
+      const text = td.decode(e.target.value);
+      aiNotifyCount++;
+      log(`⑦[AI] 收到 BLE #${aiNotifyCount}(${e.target.value.byteLength} bytes): ${JSON.stringify(text)}`);
+      bufAi += text;
+      let i;
+      while ((i = bufAi.indexOf("\n")) >= 0) {
+        const line = bufAi.slice(0, i).trim();
+        bufAi = bufAi.slice(i + 1);
+        if (!line) continue;
+        if (line.startsWith("{")) {
+          try {
+            const obj = JSON.parse(line);
+            updateVitals(obj);
+            log("♥ 生理量測(AI板):" + JSON.stringify(obj));
+            show();
+          } catch (e2) {
+            // 不是完整 JSON(被 BLE 切斷)→ 留著等下一段拼回來
+          }
+        }
+      }
+    }
+
+    // ── 連線 AI 板(你同學那台,UUID 跟單車相同)──────────────────────────
+    let aiChar = null;
+    async function connectAi() {
+      const st = document.getElementById("aiStatus");
+      if (!navigator.bluetooth) {
+        st.textContent = "AI 板:此瀏覽器不支援藍牙(iPhone 請用 Bluefy)";
+        log("✗ [AI] 此瀏覽器沒有 Web Bluetooth");
+        return;
+      }
+      try {
+        // 不知道同學那台叫什麼名字,所以列出全部藍牙裝置讓你自己選(optionalServices 要帶
+        // SERVICE 才能在連上後存取同一組 UUID 的服務)。你同學那台的 UUID 要跟這裡相同。
+        log("①[AI] 開始掃描…請在彈窗選你同學的 AI 板");
+        st.textContent = "AI 板:掃描中…";
+        const dev = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true, optionalServices: [SERVICE],
+        });
+        log(`②[AI] 已選裝置:${dev.name || dev.id}`);
+        dev.addEventListener("gattserverdisconnected", () => {
+          st.textContent = "AI 板:已斷線"; log("✗ [AI] 裝置斷線"); aiChar = null;
+        });
+        log("③[AI] 連線 GATT…");
+        const server = await dev.gatt.connect();
+        log("④[AI] 取得服務(0000cc01…)");
+        const srv = await server.getPrimaryService(SERVICE);
+        log("⑤[AI] 取得 TX 特徵(0000cc03…)");
+        const tx = await srv.getCharacteristic(TX);
+        log("⑥[AI] 開啟 notify…");
+        await tx.startNotifications();
+        tx.addEventListener("characteristicvaluechanged", onNotifyAi);
+        aiChar = tx;
+        st.textContent = "AI 板:已連線";
+        log("✅[AI] 訂閱成功!等 AI 板送 JSON 生理資料。若一直沒『⑦[AI]』= AI 板沒在送。");
+      } catch (err) {
+        st.textContent = "AI 板:連線失敗:" + err.message;
+        log("✗ [AI] 連線失敗:" + err.message);
       }
     }
 
@@ -137,7 +319,7 @@
         log("① 開始掃描…請在彈窗選 CCPA-Telemetry");
         st.textContent = "掃描中…";
         const dev = await navigator.bluetooth.requestDevice({
-          filters: [{ name: "CCPA-Telemetry" }], optionalServices: [SERVICE],
+          filters: [{ namePrefix: "CCPA-Telemetry" }], optionalServices: [SERVICE],
         });
         log(`② 已選裝置:${dev.name || dev.id}`);
         dev.addEventListener("gattserverdisconnected", () => {
@@ -192,6 +374,11 @@
       document.querySelectorAll(".assistBtn").forEach(b => { b.disabled = !on; });
       document.getElementById("rawCmdInput").disabled = !on;
       document.getElementById("rawCmdBtn").disabled = !on;
+      document.getElementById("modeTxBtn").disabled = !on;
+      document.getElementById("modeRxBtn").disabled = !on;
+      document.querySelectorAll(".rideModeBtn").forEach(b => { b.disabled = !on; });
+      document.getElementById("dropperBtn").disabled = !on;
+      if (!on && dropperHeld) { dropperHeld = false; setDropperUI(false); } // 斷線時強制回鎖定顯示
       document.getElementById("recBtn").disabled = !on;
     }
 
@@ -213,7 +400,7 @@
     function recSample() {
       const now = new Date();
       recRows.push({ iso: now.toISOString(), t: Date.now() - recStart,
-                     s: dec.snapshot(), aset: commandedAssist });
+                     s: dec.snapshot(), aset: commandedAssist, vit: { ...vitals } });
       updateRecInfo();
     }
 
@@ -248,15 +435,16 @@
       const head = ["time_iso", "t_ms", "speed_kph", "cadence_rpm", "torque_nm",
         "motor_rpm", "motor_temp_c", "assist_report", "assist_set", "soc_pct",
         "voltage_mv", "current_ma", "bat_t0", "bat_t1", "bat_t2", "bat_t3",
-        "gear_index", "gear_max"];
+        "gear_index", "gear_max", "hr_bpm", "rr_brpm", "fi"];
       const v = x => (x === null || x === undefined) ? "" : x;
       const rows = [head.join(",")];
       for (const r of recRows) {
-        const s = r.s, t = s.batteryTempsC || [];
+        const s = r.s, t = s.batteryTempsC || [], vt = r.vit || {};
         rows.push([r.iso, r.t, v(s.speedKph), v(s.cadenceRpm), v(s.torqueNm),
           v(s.motorRpm), v(s.motorTempC), v(s.assistLevel), v(r.aset), v(s.batterySocPct),
           v(s.batteryVoltageMv), v(s.batteryCurrentMa), v(t[0]), v(t[1]), v(t[2]), v(t[3]),
-          s.rearGear ? s.rearGear.index : "", s.rearGear ? s.rearGear.max : ""].join(","));
+          s.rearGear ? s.rearGear.index : "", s.rearGear ? s.rearGear.max : "",
+          v(vt.hr), v(vt.rr), v(vt.fi)].join(","));
       }
       return rows.join("\n");
     }
@@ -287,8 +475,45 @@
     document.getElementById("dlBtn").addEventListener("click", downloadCsv);
     document.getElementById("copyBtn").addEventListener("click", copyCsv);
 
-    document.getElementById("shiftUpBtn").addEventListener("click", () => sendCmd("SHIFT,UP"));
-    document.getElementById("shiftDownBtn").addEventListener("click", () => sendCmd("SHIFT,DOWN"));
+    // 電子變速升/降檔:限制 1~9 檔(這台實體 10 檔但只用 1~9)。用 0x650 讀回的目前檔位擋。
+    // 韌體只送「升/降一檔」(SHIFT,UP/DOWN → 0x300),上下限在這裡把關。
+    function doShift(up) {
+      if (gearNow != null) {
+        if (up && gearNow >= GEAR_MAX) { log(`✗ 已達最高 ${GEAR_MAX} 檔,不再升`); return; }
+        if (!up && gearNow <= GEAR_MIN) { log(`✗ 已達最低 ${GEAR_MIN} 檔,不再降`); return; }
+      }
+      sendCmd(up ? "SHIFT,UP" : "SHIFT,DOWN");
+      if (gearNow != null) {                      // 樂觀更新,避免讀回延遲時連按超出
+        gearNow = Math.min(GEAR_MAX, Math.max(GEAR_MIN, gearNow + (up ? 1 : -1)));
+        gearHoldUntil = Date.now() + 800;         // 800ms 內先信估計,讓實體變速+讀回追上
+        show();
+      }
+    }
+    document.getElementById("shiftUpBtn").addEventListener("click", () => doShift(true));
+    document.getElementById("shiftDownBtn").addEventListener("click", () => doShift(false));
+
+    // 自訂協議:切模式(送 CAN,<id>,0 → 韌體轉發到 CAN → AI 板回 OK)
+    document.getElementById("modeTxBtn").addEventListener("click", () => {
+      document.getElementById("modeAck").textContent = "(等組員回 OK…)";
+      sendCmd("CAN,1FA10001,0");
+    });
+    document.getElementById("modeRxBtn").addEventListener("click", () => {
+      document.getElementById("modeAck").textContent = "(等組員回 OK…)";
+      sendCmd("CAN,1FA10002,0");
+    });
+
+    // 騎乘模式:按下 → 送 SET_MODE(DLC=1,payload 就是模式碼 1~5,每顆不同)。
+    // 韌體走通用 CAN,<id>,<dlc>,<b0> passthrough,不用改韌體。
+    const hex2 = n => (n & 0xFF).toString(16).toUpperCase().padStart(2, "0");
+    document.querySelectorAll(".rideModeBtn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const mode = parseInt(btn.dataset.mode, 10);
+        commandedRideMode = mode;
+        const nm = RIDE_MODE_NAMES[mode] || "?";
+        document.getElementById("rideModeAck").textContent = `(已送 ${mode} ${nm},等組員回 OK…)`;
+        sendCmd(`CAN,${RIDE_MODE_ID},1,${hex2(mode)}`);
+      });
+    });
 
     // 助力段位:按下 → 送 "ASSIST,<level>"(韌體 control_set_assist_level 收 0~5)
     document.querySelectorAll(".assistBtn").forEach(btn => {
@@ -299,6 +524,33 @@
       });
     });
 
+    // 電子坐墊 Dropper:長按=解鎖(送 DROPPER,UNLOCK)、放開=鎖定(送 DROPPER,LOCK)。
+    // 實際 CAN(0x2940035)由 ESP32 韌體組;網頁只送文字指令。用 pointer 事件同時支援滑鼠/觸控,
+    // 按下時 setPointerCapture 確保放開一定收得到 up(手指移出按鈕也算)。
+    const dropperBtn = document.getElementById("dropperBtn");
+    function setDropperUI(unlocked) {
+      document.getElementById("dropperState").textContent = unlocked ? "🔓 解鎖中(放開即鎖定)" : "🔒 鎖定";
+      dropperBtn.textContent = unlocked ? "🔓 解鎖中…(放開鎖定)" : "🔓 長按解鎖(放開鎖定)";
+    }
+    function dropperDown(e) {
+      e.preventDefault();
+      if (dropperHeld) return;
+      dropperHeld = true;
+      try { dropperBtn.setPointerCapture(e.pointerId); } catch (_) {}
+      sendCmd("DROPPER,UNLOCK");
+      setDropperUI(true);
+    }
+    function dropperUp() {
+      if (!dropperHeld) return;
+      dropperHeld = false;
+      sendCmd("DROPPER,LOCK");
+      setDropperUI(false);
+    }
+    dropperBtn.addEventListener("pointerdown", dropperDown);
+    dropperBtn.addEventListener("pointerup", dropperUp);
+    dropperBtn.addEventListener("pointercancel", dropperUp);
+    dropperBtn.addEventListener("contextmenu", (e) => e.preventDefault()); // 手機長按不跳選單
+
     // 原始指令:按「送出」或在輸入框按 Enter 都送
     document.getElementById("rawCmdBtn").addEventListener("click", sendRawCmd);
     document.getElementById("rawCmdInput").addEventListener("keydown", (e) => {
@@ -306,6 +558,7 @@
     });
 
     document.getElementById("connectBtn").addEventListener("click", connect);
+    document.getElementById("connectAiBtn").addEventListener("click", connectAi);
     document.getElementById("clearBtn").addEventListener("click", () => {
       rawLines.length = 0; logLines.length = 0; notifyCount = 0;
       document.getElementById("raw").textContent = "(尚未收到封包)";

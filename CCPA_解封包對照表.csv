@@ -1,0 +1,29 @@
+﻿藍芽裝置名稱： `CCPA-Telemetry`,,,,,,,,,,
+"Service uuid:""0000CC01-C3D5-40B4-AB51-611746A316F3""",,,,,,,,,,
+"TX uuid:""0000CC03-C3D5-40B4-AB51-611746A316F3"" #notify",,,,,,,,,,
+"RX uuid:""0000CC02-C3D5-40B4-AB51-611746A316F3"" #Write",,,,,,,,,,
+,,,,,,,,,,
+訊號,payload 欄位,CAN ID (ACK),CAN ID (BRO),來源,byte 位置,編碼,換算公式,單位,無效值,備註
+車速,speedKph,0x29404FC,0x29404FE,GENERAL_INFO00(主),data[0..1],u16 little-endian,× 0.01,kph,0xFFFF,優先來源
+騎士扭力,torqueNm,0x29404FC,0x29404FE,GENERAL_INFO00(主),data[2..3],u16 little-endian,× 0.01,Nm,0x0000 / 0xFFFF,優先來源
+踏頻,cadenceRpm,0x29404FC,0x29404FE,GENERAL_INFO00(主),data[4],u8,直接,rpm,,優先來源
+電池電量,batterySocPct,0x29404F8,0x29404FA,GENERAL_INFO01(主),data[4],u8,直接,%,0x00 / 0xFF,優先來源
+助力等級,assistLevel,0x2940015,,CENTRAL_INTERFACE_ASSISTREQ,data[1] & 0x0F,u8,0~5 有效,級,6 = 關閉,
+車速,speedKph,0x1E942040,0x1E942042,CONTROLLER_INFO00(次),data[0..1],u16 little-endian,× 0.01,kph,0xFFFF,無主來源時才用
+馬達轉速,motorRpm,0x1E942048,0x1E94204A,CONTROLLER_INFO02,data[4..5],u16 little-endian,直接,rpm,,
+馬達溫度,motorTempC,0x1E942048,0x1E94204A,CONTROLLER_INFO02,data[6],u8,− 64,°C,,offset 編碼(可表示負溫)
+踏頻,cadenceRpm,0x1E94204C,0x1E94204E,CONTROLLER_INFO03(次),data[3],u8,直接,rpm,,無主來源時才用
+騎士扭力,torqueNm,0x1E94204C,0x1E94204E,CONTROLLER_INFO03(次),data[4..5],u16 little-endian,× 0.1,Nm,,無主來源時才用
+電池電壓,batteryVoltageMv,0x1E942444,0x1E942446,BAT1_INFO01,data[0..2],u24 little-endian,直接,mV,,
+電池電流,batteryCurrentMa,0x1E942444,0x1E942446,BAT1_INFO01,data[4..5],u16 little-endian,直接,mA,,
+電池電量,batterySocPct,0x1E942444,0x1E942446,BAT1_INFO01(次),data[6],u8,直接,%,0xFF,無主來源時才用
+電池溫度 1,batteryTempsC[0],0x1E942458,0x1E94245A,BAT1_INFO06,data[0],u8,− 64,°C,,offset 編碼
+電池溫度 2,batteryTempsC[1],0x1E942458,0x1E94245A,BAT1_INFO06,data[1],u8,− 64,°C,,offset 編碼
+電池溫度 3,batteryTempsC[2],0x1E942458,0x1E94245A,BAT1_INFO06,data[2],u8,− 64,°C,,offset 編碼
+電池溫度 4,batteryTempsC[3],0x1E942458,0x1E94245A,BAT1_INFO06,data[3],u8,− 64,°C,,offset 編碼
+後檔位(目前),rearGear.index,0x650,,Derailleur State,data[0],u8,直接,檔,,GearIndex
+後檔位(最大),rearGear.max,0x650,,Derailleur State,data[4],u8,直接,檔,,GearRange
+,,,,,,,,,,
+解碼後 payload 範例(dec.snapshot()),,,,,,,,,,
+"payload = { speedKph: 25, cadenceRpm: 80, torqueNm: 15, motorRpm: 1200, motorTempC: 40, assistLevel: 3, batterySocPct: 80, batteryVoltageMv: 48000, batteryCurrentMa: 5000, batteryTempsC: [25,26,27,28], rearGear: { index: 4, max: 11 } }",,,,,,,,,,
+沒收到的欄位 = null,,,,,,,,,,

@@ -1,9 +1,36 @@
 import { fmtDist, gradeColor } from "../slope.js";
 import Speedometer from "./Speedometer.jsx";
-import batteryIcon from "../../../assets/icon-battery.png";
 import assistIcon from "../../../assets/icon-bolt.png";
 
-const ASSIST = ["Off", "Eco+", "Eco", "Normal", "Sport", "Sport+"];
+// 與一般模式 ASSIST_WORDS 對齊（同一台真車的 assistLevel，文字必須一致）
+const ASSIST = ["Off", "Eco", "Eco+", "Normal", "Sport", "Sport+"];
+
+// 沒數值（null/undefined/NaN）就顯示破折號，與一般模式一致（未連車 → --）
+const has = (v) => v != null && !Number.isNaN(v);
+
+// 電量：直立電池外型 + 五格（每格 20%，由下往上填），與一般模式相同
+function BatteryVert({ soc }) {
+  const pct = Math.max(0, Math.min(100, soc ?? 0));
+  const filled = pct > 0 ? Math.max(1, Math.round(pct / 20)) : 0;
+  const color = pct <= 20 ? "#e0533d" : pct <= 50 ? "#f5a623" : "#2fa860";
+  return (
+    <div className="nm-battv">
+      <span className="nm-battv-cap" />
+      <div className="nm-battv-shell">
+        {Array.from({ length: 5 }).map((_, i) => {
+          const on = i >= 5 - filled; // 由下往上亮
+          return (
+            <span
+              key={i}
+              className={`nm-battv-cell ${on ? "on" : ""}`}
+              style={on ? { background: color } : null}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // 轉彎動作 → 箭頭
 const ARROW = {
@@ -47,9 +74,6 @@ export default function NavOverlay({
   onToggleGps,
   onExit,
 }) {
-  const battColor =
-    live.battery > 40 ? "#1db954" : live.battery > 15 ? "#f5a623" : "#e53935";
-
   const arrow = finished ? "🏁" : ARROW[live.maneuver] || "↑";
   const road = finished
     ? "已抵達目的地"
@@ -100,22 +124,22 @@ export default function NavOverlay({
         <div className="dash-cluster">
           <div className="dash-side">
             <div className="dash-icon">
-              <img className="dash-icon-img" src={batteryIcon} alt="電量" />
+              <BatteryVert soc={live.battery} />
             </div>
-            <div className="dash-val" style={{ color: battColor }}>
-              {live.battery.toFixed(0)}%
-            </div>
-            <div className="dash-lbl">電量</div>
           </div>
 
           <div className="dash-center">
             <Speedometer speed={live.speed} max={25} />
             <div className="dash-extra">
-              <span>踏頻 {live.cadence} rpm</span>
-              <span style={{ color: gradeColor(live.grade ?? 0) }}>
-                坡度 {(live.grade ?? 0) >= 0 ? "+" : ""}
-                {(live.grade ?? 0).toFixed(1)}%
-              </span>
+              <span>踏頻 {has(live.cadence) ? live.cadence : "—"} rpm</span>
+              {has(live.grade) ? (
+                <span style={{ color: gradeColor(live.grade) }}>
+                  坡度 {live.grade >= 0 ? "+" : ""}
+                  {live.grade.toFixed(1)}%
+                </span>
+              ) : (
+                <span>坡度 —</span>
+              )}
             </div>
           </div>
 
@@ -123,7 +147,7 @@ export default function NavOverlay({
             <div className="dash-icon">
               <img className="dash-icon-img" src={assistIcon} alt="輔助" />
             </div>
-            <div className="dash-val">{ASSIST[live.assist]}</div>
+            <div className="dash-val">{has(live.assist) ? ASSIST[live.assist] : "—"}</div>
             <div className="dash-lbl">輔助段位</div>
           </div>
         </div>

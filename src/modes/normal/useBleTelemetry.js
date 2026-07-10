@@ -82,6 +82,7 @@ export function useBleTelemetry() {
   const connect = useCallback(async () => {
     setError(null);
     setPhase("connecting");
+    snapRef.current = null; // 清掉上一段連線的殘值，避免沿用到舊車況
     startFlush(); // 連線過程的 ①~⑥ log 也靠這個計時器刷出來
     try {
       const conn = await ccpaBleConnect({
@@ -107,7 +108,19 @@ export function useBleTelemetry() {
           dirtyRef.current = true;
         },
         onData: (snap) => {
-          snapRef.current = snap; // 只記最新，UI 由計時器統一刷
+          // 抗閃爍：車子偶爾會送無效值（例：SOC=0x00/0xFF → 該欄位這包為 null）。
+          // 若直接刷進去，畫面會在「數字 ↔ --」之間跳。這裡沿用上一筆的有效值：
+          // 只有「這次是 null 但上一筆有值」的欄位保留舊值，其餘照新值。
+          const prev = snapRef.current;
+          if (prev) {
+            const merged = { ...snap };
+            for (const k in snap) {
+              if (snap[k] == null && prev[k] != null) merged[k] = prev[k];
+            }
+            snapRef.current = merged;
+          } else {
+            snapRef.current = snap;
+          }
           dirtyRef.current = true;
         },
         onFrame: (f) => {
@@ -153,6 +166,8 @@ export function useBleTelemetry() {
     setStatus("已斷線");
     setCanControl(false);
     setCommandedAssist(null);
+    snapRef.current = null; // 清空車況，斷線後畫面回到 --（不停在最後一筆舊數字）
+    setData(null);
     // 斷線時把還在等 ACK 的都收掉（當作沒收到），避免懸而未決
     ackWaitersRef.current.forEach((w) => {
       clearTimeout(w.timer);

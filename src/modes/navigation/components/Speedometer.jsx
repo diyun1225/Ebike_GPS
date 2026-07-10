@@ -3,7 +3,8 @@ export default function Speedometer({ speed = 0, max = 25 }) {
   const cx = 100;
   const cy = 100;
   const r = 80;
-  const frac = Math.max(0, Math.min(1, speed / max));
+  const hasSpeed = speed != null && !Number.isNaN(speed); // 未連車 → 顯示 —
+  const frac = Math.max(0, Math.min(1, (hasSpeed ? speed : 0) / max));
 
   // 上半圓弧（左→右）
   const arc = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
@@ -53,7 +54,7 @@ export default function Speedometer({ speed = 0, max = 25 }) {
       />
 
       <text x={cx} y={cy - 22} className="gauge-num" textAnchor="middle">
-        {Math.round(speed)}
+        {hasSpeed ? Math.round(speed) : "—"}
       </text>
       <text x={cx} y={cy - 6} className="gauge-unit" textAnchor="middle">
         km/h

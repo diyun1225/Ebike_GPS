@@ -39,10 +39,12 @@ export async function ccpaBleConnect(opts) {
   let buf = "";
   let notifyCount = 0;
 
-  onLog("① 開始掃描…請在彈窗選 " + deviceName);
-  onStatus("掃描中…請選 " + deviceName);
+  onLog("① 開始掃描…請在彈窗自己挑 " + deviceName);
+  onStatus("掃描中…請在清單挑 " + deviceName);
+  // 用 acceptAllDevices 列出所有 BLE 裝置，讓使用者自己挑。
+  // （名稱過濾 filters:[{name}] 在部分裝置/瀏覽器會掃不到，先用全列的方式確保挑得到。）
   const device = await navigator.bluetooth.requestDevice({
-    filters: [{ name: deviceName }],
+    acceptAllDevices: true,
     optionalServices: [SERVICE],
   });
   onLog("② 已選裝置：" + (device.name || device.id));

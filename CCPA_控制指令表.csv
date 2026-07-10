@@ -1,0 +1,9 @@
+﻿CAN ID,功能分類,欄位,Byte位置,Bit範圍,值(hex),意義,方向,DLC,對應指令,備註
+0x300,Bike Control 00,GearShiftUpDown,Byte5,45:46,0x00,不換,送出(host→車),8,,SID 標準框
+0x300,Bike Control 00,GearShiftUpDown,Byte5,45:46,0x01,升檔(byte5=0x20),送出(host→車),8,"SHIFT,UP",SID 標準框
+0x300,Bike Control 00,GearShiftUpDown,Byte5,45:46,0x02,降檔(byte5=0x40),送出(host→車),8,"SHIFT,DOWN",SID 標準框
+0x300,Bike Control 00,GearShift,Byte5,40:44,1~31,指定跳到第N檔,送出(host→車),8,,絕對檔位(0=不動)
+0x2940035,Central Interface Dropper,From Who,Byte0,0:1,0x02,SW(軟體發起),送出(host→車),2,,Sequence 一起塞在 Byte0
+0x2940035,Central Interface Dropper,Sequence Number,Byte0,2:3,0x00~0x03,每送遞增(去重),送出(host→車),2,,
+0x2940035,Central Interface Dropper,Dropper Control,Byte1,8:15,0x00,關閥=鎖定,送出(host→車),2,"DROPPER,LOCK",網頁「電子坐墊」放開時送;CAN 由 ESP32 control_set_dropper 組
+0x2940035,Central Interface Dropper,Dropper Control,Byte1,8:15,0x01,開閥=解鎖,送出(host→車),2,"DROPPER,UNLOCK",網頁「電子坐墊」長按時送;CAN 由 ESP32 control_set_dropper 組
