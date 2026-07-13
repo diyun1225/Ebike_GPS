@@ -36,14 +36,25 @@
     <button class="rideModeBtn" data-mode="1" disabled>1 一般</button>
     <button class="rideModeBtn" data-mode="2" disabled>2 電量管理</button>
     <button class="rideModeBtn" data-mode="3" disabled>3 智慧輔助</button>
-    <button class="rideModeBtn" data-mode="4" disabled>4 智慧變速</button>
-    <button class="rideModeBtn" data-mode="5" disabled>5 智慧避震</button>
     <span id="rideModeAck">(未選)</span>
+  </p>
+
+  <p>避震硬度(0x294003B,1 最軟 ~ 5 最硬 → byte1 0x81~0x85):
+    <button class="suspBtn" data-level="1" disabled>1 最軟</button>
+    <button class="suspBtn" data-level="2" disabled>2</button>
+    <button class="suspBtn" data-level="3" disabled>3</button>
+    <button class="suspBtn" data-level="4" disabled>4</button>
+    <button class="suspBtn" data-level="5" disabled>5 最硬</button>
+    <span id="suspAck">(未選)</span>
   </p>
 
   <p>電子坐墊 Dropper(0x2940035,長按=解鎖 / 放開=鎖定):
     <button id="dropperBtn" style="touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none" disabled>🔓 長按解鎖(放開鎖定)</button>
     <span id="dropperState">🔒 鎖定</span>
+  </p>
+
+  <p>系統關機(0x2940005 System Control,Turning System=0x00 System Off → 電池斷電):
+    <button id="systemOffBtn" disabled>⏻ 關機(斷電)</button>
   </p>
 
   <p>原始指令(組員輸出的字串直接貼這裡送):
@@ -78,7 +89,7 @@
     // 騎乘模式(自訂協議 SET_MODE 0x1FA13000):DLC=1,payload 就是模式碼(1~5)
     const RIDE_MODE_ID = "1FA13000";          // IoT→AI 命令 ID(hex 字串,直接塞進 CAN,<id>,...)
     const RIDE_MODE_ACK_ID = 0x1FA23000;      // AI→IoT 回覆 ID(DATA= AA <模式碼>)
-    const RIDE_MODE_NAMES = { 1: "一般", 2: "電量管理", 3: "智慧輔助", 4: "智慧變速", 5: "智慧避震" };
+    const RIDE_MODE_NAMES = { 1: "一般", 2: "電量管理", 3: "智慧輔助" };
     let commandedRideMode = null;              // 最後一次按的模式(當畫面回饋)
 
     // 電子坐墊 Dropper:網頁只送文字指令,實際 CAN frame(0x2940035:From Who/Sequence/
@@ -377,7 +388,9 @@
       document.getElementById("modeTxBtn").disabled = !on;
       document.getElementById("modeRxBtn").disabled = !on;
       document.querySelectorAll(".rideModeBtn").forEach(b => { b.disabled = !on; });
+      document.querySelectorAll(".suspBtn").forEach(b => { b.disabled = !on; });
       document.getElementById("dropperBtn").disabled = !on;
+      document.getElementById("systemOffBtn").disabled = !on;
       if (!on && dropperHeld) { dropperHeld = false; setDropperUI(false); } // 斷線時強制回鎖定顯示
       document.getElementById("recBtn").disabled = !on;
     }
@@ -389,8 +402,8 @@
       sendCmd(cmd);
     }
 
-    // ── 資料記錄:固定 5Hz 取樣目前解碼快照 → 存陣列 → 匯出 CSV ────────────
-    const REC_HZ = 5;                 // 每秒取樣筆數(0.2 秒一筆)
+    // ── 資料記錄:固定週期取樣目前解碼快照 → 存陣列 → 匯出 CSV ────────────
+    const REC_MS = 90;                // 每筆間隔(ms)。90ms≈11Hz,貼著 ESP32 80ms 批次節奏
     let recording = false;
     let recTimer = null;
     let recStart = 0;
@@ -417,10 +430,10 @@
       if (recording) {
         recRows.length = 0;                    // 每次開始 = 全新一段
         recStart = Date.now();
-        recTimer = setInterval(recSample, Math.round(1000 / REC_HZ));
+        recTimer = setInterval(recSample, REC_MS);
         btn.textContent = "⏹ 停止記錄";
         try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
-        log("⏺ 開始記錄(" + REC_HZ + " Hz)");
+        log("⏺ 開始記錄(每 " + REC_MS + " ms)");
       } else {
         clearInterval(recTimer); recTimer = null;
         try { if (wakeLock) await wakeLock.release(); } catch (e) {}
@@ -435,7 +448,7 @@
       const head = ["time_iso", "t_ms", "speed_kph", "cadence_rpm", "torque_nm",
         "motor_rpm", "motor_temp_c", "assist_report", "assist_set", "soc_pct",
         "voltage_mv", "current_ma", "bat_t0", "bat_t1", "bat_t2", "bat_t3",
-        "gear_index", "gear_max", "hr_bpm", "rr_brpm", "fi"];
+        "current_gear", "hr_bpm", "rr_brpm", "fi"];
       const v = x => (x === null || x === undefined) ? "" : x;
       const rows = [head.join(",")];
       for (const r of recRows) {
@@ -443,7 +456,7 @@
         rows.push([r.iso, r.t, v(s.speedKph), v(s.cadenceRpm), v(s.torqueNm),
           v(s.motorRpm), v(s.motorTempC), v(s.assistLevel), v(r.aset), v(s.batterySocPct),
           v(s.batteryVoltageMv), v(s.batteryCurrentMa), v(t[0]), v(t[1]), v(t[2]), v(t[3]),
-          s.rearGear ? s.rearGear.index : "", s.rearGear ? s.rearGear.max : "",
+          s.rearGear ? s.rearGear.index : "",
           v(vt.hr), v(vt.rr), v(vt.fi)].join(","));
       }
       return rows.join("\n");
@@ -515,6 +528,15 @@
       });
     });
 
+    // 避震硬度:按下 → 送 "FORK,<1~5>"(韌體 control_set_frontfork,byte1=0x80+檔位=0x81~0x85)
+    document.querySelectorAll(".suspBtn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lvl = btn.dataset.level;
+        sendCmd("FORK," + lvl);
+        document.getElementById("suspAck").textContent = `(已送 ${lvl})`;
+      });
+    });
+
     // 助力段位:按下 → 送 "ASSIST,<level>"(韌體 control_set_assist_level 收 0~5)
     document.querySelectorAll(".assistBtn").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -550,6 +572,14 @@
     dropperBtn.addEventListener("pointerup", dropperUp);
     dropperBtn.addEventListener("pointercancel", dropperUp);
     dropperBtn.addEventListener("contextmenu", (e) => e.preventDefault()); // 手機長按不跳選單
+
+    // 系統關機:送 SYSTEM,OFF → 韌體 control_set_system(0x00) 組出 0x2940005 frame
+    // (Turning System=0x00 System Off),車體收到後電池停止供電。屬不可逆動作,先二次確認。
+    document.getElementById("systemOffBtn").addEventListener("click", () => {
+      if (!confirm("確定要關機?這會讓車體斷電、電池停止供電,需重新開機才會恢復。")) return;
+      sendCmd("SYSTEM,OFF");
+      log("⏻ 已送系統關機(SYSTEM,OFF → 0x2940005 Turning System=0x00)");
+    });
 
     // 原始指令:按「送出」或在輸入框按 Enter 都送
     document.getElementById("rawCmdBtn").addEventListener("click", sendRawCmd);

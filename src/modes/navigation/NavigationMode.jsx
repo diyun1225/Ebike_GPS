@@ -11,6 +11,11 @@ import NavOverlay from "./components/NavOverlay.jsx";
 
 const BIKE_KG = 25; // 車身重量（算總載重用）
 
+// GPS 偏離路線判定：離最近路線點超過 OFF_ROUTE_M 公尺、且連續 OFF_ROUTE_HITS 筆定位
+// 都超標，才判定「偏離」並重新規劃（連續多筆是為了避開 GPS 單筆跳動的誤判）。
+const OFF_ROUTE_M = 45;
+const OFF_ROUTE_HITS = 3;
+
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "YOUR_API_KEY";
 // 有設定 Map ID（向量地圖）才能啟用 3D 傾斜導航；沒設定就用 2D 順暢跟隨
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || undefined;
@@ -175,6 +180,9 @@ export default function NavigationMode({ onBack }) {
   const riderMarkerRef = useRef(null);
   const riderCircleRef = useRef(null); // 定位點的白圈底
   const prevSegIdxRef = useRef(-1); // 目前高亮的坡度段
+  const reroutingRef = useRef(false); // 正在重新規劃中（避免同時觸發多次）
+  const offRouteCountRef = useRef(0); // 連續偏離的定位筆數
+  const [routeVersion, setRouteVersion] = useState(0); // 路線重算一次就 +1，讓相關 effect 重掛
 
   // Google Maps 載入完成後初始化地圖
   useEffect(() => {
@@ -239,7 +247,7 @@ export default function NavigationMode({ onBack }) {
       maxGrade: +route.maxGrade.toFixed(1),
       segments: route.segProfile, // 整條路分段坡度 + 每段幾何
     });
-  }, [phase, sendCan]);
+  }, [phase, sendCan, routeVersion]);
 
   // 模擬騎乘：沿路線推進，速度/踏頻/輔助/電量隨坡度變化
   useEffect(() => {
@@ -463,6 +471,18 @@ export default function NavigationMode({ onBack }) {
             best = i;
           }
         }
+        // ── 偏離路線偵測：離最近路線點太遠、連續幾筆定位都超標 → 自動重新規劃 ──
+        if (bd > OFF_ROUTE_M) {
+          offRouteCountRef.current += 1;
+          if (offRouteCountRef.current >= OFF_ROUTE_HITS && !reroutingRef.current) {
+            offRouteCountRef.current = 0;
+            reroute(here); // 從目前位置重新算到終點
+            return; // 這筆先不更新儀表，等新路線建好（routeVersion 變 → 本 effect 重掛）
+          }
+        } else {
+          offRouteCountRef.current = 0; // 回到路線上就歸零
+        }
+
         const distM = route.cum[best];
         const grade = slopeAt(route, distM);
 
@@ -566,7 +586,7 @@ export default function NavigationMode({ onBack }) {
       window.removeEventListener("deviceorientationabsolute", onOrient, true);
       window.removeEventListener("deviceorientation", onOrient, true);
     };
-  }, [phase, gps, google]);
+  }, [phase, gps, google, routeVersion]);
 
   function toggleRide() {
     if (riding) {
@@ -771,7 +791,8 @@ export default function NavigationMode({ onBack }) {
   }
 
   // 從一份路線結果算坡度/電量/轉彎並畫線
-  async function applyDirections(dirResult) {
+  // keepView=true：導航中重新規劃用，重建路線但不移動鏡頭（維持跟隨騎士）
+  async function applyDirections(dirResult, { keepView = false } = {}) {
     try {
       dirRendererRef.current.setDirections(dirResult);
       setLoading(true);
@@ -810,7 +831,7 @@ export default function NavigationMode({ onBack }) {
         totalDist = built.totalDist;
         rpts = elevResult.results.map((r) => r.location);
         relevs = elevResult.results.map((r) => r.elevation);
-        drawSegments(segs);
+        drawSegments(segs, !keepView);
       } catch (slopeErr) {
         console.warn("坡度分段失敗，改用平地估算：", slopeErr);
         setStatus({ msg: "坡度資料暫時無法取得，已用平地估算距離/電量", error: false });
@@ -826,7 +847,7 @@ export default function NavigationMode({ onBack }) {
         const b = new google.maps.LatLngBounds();
         path.forEach((p) => b.extend(p));
         boundsRef.current = b;
-        mapRef.current.fitBounds(b);
+        if (!keepView) mapRef.current.fitBounds(b);
       }
 
       setSegments(segs);
@@ -919,6 +940,32 @@ export default function NavigationMode({ onBack }) {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  // GPS 偏離路線 → 從目前位置重新規劃到終點（導航中，不移動鏡頭）。
+  // 中途點視為已過、捨去，只保留最終目的地。
+  async function reroute(fromLatLng) {
+    if (reroutingRef.current) return;
+    reroutingRef.current = true;
+    setStatus({ msg: "已偏離路線，重新規劃中…", error: false });
+    try {
+      const dirResult = await dirServiceRef.current.route({
+        origin: { lat: fromLatLng.lat(), lng: fromLatLng.lng() },
+        destination: lastStop,
+        travelMode: google.maps.TravelMode.DRIVING,
+      });
+      await applyDirections(dirResult, { keepView: true }); // 重建路線/坡度/摘要，鏡頭不動
+      simRef.current = { distM: 0 };
+      prevSegIdxRef.current = -1;
+      gpsPrevRef.current = null;
+      setRouteVersion((v) => v + 1); // 觸發 GPS 效果重掛（用新 route）+ 重送 CAN/MQTT
+      setStatus({ msg: "已依目前位置重新規劃路線", error: false });
+    } catch (e) {
+      console.warn("重新規劃失敗：", e);
+      setStatus({ msg: "重新規劃失敗，暫時沿用原路線", error: true });
+    } finally {
+      reroutingRef.current = false;
     }
   }
 

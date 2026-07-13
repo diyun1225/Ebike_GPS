@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { zoneFromHr, decide, nextGear, RAMP_INTERVAL_MS } from "./decision.js";
-import { gearToAssistFrame } from "./canFrame.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rand = (a, b) => Math.random() * (b - a) + a;
@@ -134,8 +133,7 @@ export function useHeartRateEngine(base, demoBand = null) {
         state: dir.state,
         note: dir.note,
         mode: dir.mode,
-        gear: s.gear, // 輔助力段數 1~5，6=無
-        can: gearToAssistFrame(s.gear), // 送出用的 CAN 封包（系統實際輸出）
+        gear: s.gear, // 輔助力段數 1~5，6=無；實際控制指令在 HeartRateMode 用 ble.setAssist 送出
         // demo 車輛數據：跟著強度走，讓 TeleGrid 在 demo 也有對應數字
         tele: {
           speedKph: +s.speed.toFixed(1),

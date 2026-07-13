@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useBle } from "../../ble/BleContext.jsx";
+import BleConnectPanel from "../../ble/BleConnectPanel.jsx";
+import { fiToPct } from "../../ble/vitalsBle.js";
 import padlockIcon from "../../assets/padlock.png";
 
 // 沒有數值（null / undefined）時統一顯示破折號
@@ -255,10 +257,21 @@ export default function NormalMode({ onBack }) {
     logLines,
     rawLines,
     clearLog,
+    pi, // 樹莓派連線：心率 HR / 呼吸率 RR / 疲勞值 FI
   } = useBle(); // 共用 App 層那條連線（連線在主畫面做，這裡只讀資料）
   const [confirmExit, setConfirmExit] = useState(false);
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
   const connected = phase === "connected";
+  const piConnected = pi?.phase === "connected";
+
+  // 把樹莓派的生理量測併進車況資料：hr/rr/疲勞度（fi）。樹莓派沒帶到就保留車況原值。
+  const v = pi?.vitals;
+  const view = {
+    ...data,
+    hr: v?.hr ?? data?.hr,
+    rr: v?.rr ?? data?.rr,
+    fatigue: fiToPct(v?.fi) ?? data?.fatigue,
+  };
 
   return (
     <div className="dash nm">
@@ -272,19 +285,20 @@ export default function NormalMode({ onBack }) {
 
       <div className="nm-topbar">
         <h1 className="nm-header">一般模式</h1>
-        <span className={`nm-live ${connected ? "on" : ""}`}>
-          <i /> {connected ? "自行車連線中" : "未連線"}
-        </span>
+        {/* 自行車連線狀態不在這裡重複顯示，統一由下方 BleConnectPanel 呈現（含連線/模擬按鈕） */}
       </div>
+
+      {/* 自行車 + 樹莓派連線控制（不用回主畫面即可連線） */}
+      <BleConnectPanel className="nm-ble-stack" />
 
       {error && <div className="nm-error">{error}</div>}
 
-      {connected || data ? (
-        <Dashboard data={data} />
+      {connected || data || piConnected ? (
+        <Dashboard data={view} />
       ) : (
         <div className="nm-empty">
           <div className="nm-empty-icon">🚲</div>
-          <p>尚未連線。請回主畫面點「連線運算板」與 CCPA-Telemetry 配對，即可即時讀取車況數據。</p>
+          <p>尚未連線。點上方「連線自行車」與 CCPA-Telemetry 配對，即可即時讀取車況數據；「連線樹莓派」可讀心率／呼吸率／疲勞度。</p>
           <p className="nm-empty-hint">
             需 HTTPS 或 localhost；iPhone 請用 Bluefy 瀏覽器開啟。
           </p>

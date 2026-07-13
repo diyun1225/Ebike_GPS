@@ -10,12 +10,12 @@
 //   "suspension" 避震軟硬（0 最軟 ~ 5 最硬）
 
 export const RIDE_CONTROLS_BY_MODE = {
-  normal: ["assist", "shift", "suspension"], // 一般模式：三項全可改
-  navigation: ["shift", "suspension"], // 電量管理：輔助力由模式自動控
-  assist: ["shift", "suspension"], // 智慧輔助：輔助力由模式自動控
-  suspension: ["assist", "shift"], // 智慧避震：避震由模式自動控
-  shift: ["assist", "suspension"], // 智慧變速：變速由模式自動控
-  heartrate: ["shift", "suspension"], // 心肺：輔助力由心率引擎自動控
+  normal: ["shift", "suspension", "assist"], // 一般模式：三項全可手動（底部控制條）
+  navigation: [], // 電量管理：輔助力/避震/變速皆背景自動，無需手動
+  assist: [], // 智慧輔助：同上，背景自動
+  suspension: [], // 智慧避震：背景自動
+  shift: [], // 智慧變速：背景自動
+  heartrate: [], // 心肺：背景自動
 };
 
 // 每個模式「自動接管」的那一項（顯示在卡片底部，讓使用者知道為何少一項）

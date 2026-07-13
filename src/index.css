@@ -1522,13 +1522,18 @@ button:disabled {
   background: #268a4f;
 }
 
-/* ── 主畫面：運算板連線狀態按鈕 ─────────────────────────────── */
-.home-ble {
+/* ── 主畫面：連線狀態按鈕（自行車 + 樹莓派，左上直向堆疊）──────── */
+.home-ble-stack {
   position: absolute;
   top: 14px;
   left: 14px;
-  right: auto;
   z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.home-ble {
   width: max-content;
   max-width: calc(100% - 28px);
   display: inline-flex;
@@ -2029,7 +2034,8 @@ button:disabled {
 .dash.nm {
   background: linear-gradient(170deg, #eef6f1 0%, #f7faf8 46%, #fbfbfc 100%);
   color: #23342b;
-  padding: 16px 18px 28px;
+  /* 底部留 200px 給固定的手動控制面板，電子坐墊等內容才不會被蓋住 */
+  padding: 16px 18px 200px;
   overflow-y: auto;
 }
 
@@ -2090,6 +2096,17 @@ button:disabled {
   color: #b0392b;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* 一般模式內的連線控制列：沿用主畫面的 .home-ble 樣式，但排在內容流裡（非絕對定位） */
+.nm-ble-stack {
+  /* 往上收，貼在標題列正下方（負邊距抵銷部分間距，但不與標題重疊；
+     未連線時自行車列較寬，若拉太高會撞到置中標題） */
+  margin-top: -10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; /* 模擬資料/樹莓派連線靠右，對齊右上角 */
+  gap: 8px;
 }
 
 /* 尚未連線的空狀態 */
@@ -2491,209 +2508,106 @@ button:disabled {
   word-break: break-all;
 }
 
-/* ===== 騎乘手動控制：浮動小球 + 展開卡片（RideControls） ===== */
-/* 點外面收合用的透明遮罩（吃掉點擊，不擋視覺） */
-.rc-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 1840;
-}
-
-.rc-ball {
-  position: absolute;
-  width: 54px;
-  height: 54px;
-  padding: 0;
-  margin: 0;
-  transform: translateY(-50%);
-  border-radius: 50%;
-  z-index: 1850;
+/* ===== 騎乘手動控制：固定在畫面最下方的面板（RideControls） =====
+   三個控制左右並排，每格 ＋(上)/−(下) 上下擺 → 整排上方全是 ＋、下方全是 −，
+   往旁邊滑只會碰到同方向的鈕，避免相反操作的誤觸。
+   面板置中對齊手機框（此元件在 App 層，非 .dash 子孫，故用 fixed+置中）。 */
+.rc-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 10px;
+  width: min(410px, calc(100% - 20px));
+  z-index: 1500;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(28, 30, 40, 0.5);
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-  cursor: grab;
-  touch-action: none; /* 拖曳時不要觸發頁面捲動 */
-  transition: transform 0.12s ease, background 0.2s ease;
-}
-.rc-ball.right {
-  right: 12px;
-}
-.rc-ball.left {
-  left: 12px;
-}
-.rc-ball:active {
-  cursor: grabbing;
-  transform: translateY(-50%) scale(0.94);
-}
-.rc-ball.open {
-  background: rgba(66, 133, 244, 0.9);
-}
-.rc-ball-ico {
-  width: 80%;
-  height: 80%;
-  object-fit: contain;
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.rc-card {
-  position: absolute;
-  transform: translateY(-50%);
-  width: min(280px, calc(100% - 96px));
-  z-index: 1850;
-  background: rgba(24, 26, 34, 0.82);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px 12px 12px;
   border-radius: 18px;
-  padding: 14px 16px 12px;
+  background: rgba(22, 24, 32, 0.85);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   color: #fff;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.4);
-  animation: rcCardIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.rc-card.right {
-  right: 76px;
-}
-.rc-card.left {
-  left: 76px;
-  animation-name: rcCardInLeft;
-}
-@keyframes rcCardIn {
-  from {
-    opacity: 0;
-    transform: translateY(-50%) translateX(12px);
-  }
-}
-@keyframes rcCardInLeft {
-  from {
-    opacity: 0;
-    transform: translateY(-50%) translateX(-12px);
-  }
-}
-.rc-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 15px;
-  font-weight: 800;
-  margin-bottom: 10px;
-}
-.rc-close {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  margin: 0;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
 }
 
-.rc-row {
-  padding: 10px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+/* 一格控制（直向）：標題 → ＋ → 數值 → − */
+.rc-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
 }
-.rc-row:first-of-type {
-  border-top: none;
+.rc-cell + .rc-cell {
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding-left: 10px;
 }
-.rc-row-label {
-  font-size: 13px;
+.rc-cell-label {
+  font-size: 12px;
   font-weight: 700;
   color: #cfd4dc;
-  margin-bottom: 8px;
+  white-space: nowrap;
 }
-.rc-hint {
-  font-size: 11px;
+.rc-cell-hint {
+  font-size: 10px;
   font-weight: 600;
   color: #8b93a1;
-  margin-left: 4px;
+  margin-left: 3px;
+}
+.rc-cell-val {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  line-height: 1;
+}
+.rc-cell-val b {
+  font-size: 22px;
+  font-weight: 800;
+}
+.rc-cell-val i {
+  font-style: normal;
+  font-size: 11px;
+  color: #9aa1ad;
 }
 
-/* +/− 步進器（變速、輔助力） */
-.rc-stepper {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.rc-step {
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
+/* ＋/− 直向大按鈕，佔滿整格寬 */
+.rc-vstep {
+  width: 100%;
+  height: 42px;
   padding: 0;
   margin: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
   transition: background 0.12s ease, transform 0.08s ease;
 }
-.rc-step:hover {
+.rc-vstep:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.22);
 }
-.rc-step:active {
-  transform: scale(0.92);
+.rc-vstep:active:not(:disabled) {
+  transform: scale(0.94);
   background: rgba(66, 133, 244, 0.9);
 }
-.rc-val {
-  flex: 1;
-  text-align: center;
-  line-height: 1.1;
-}
-.rc-val b {
-  display: block;
-  font-size: 26px;
-  font-weight: 800;
-}
-.rc-val span {
-  font-size: 11px;
-  color: #9aa1ad;
+.rc-vstep:disabled {
+  opacity: 0.32;
+  cursor: default;
 }
 
-/* 避震分段 0~5 */
-.rc-seg {
-  display: flex;
-  gap: 6px;
-}
-.rc-seg-btn {
-  flex: 1;
-  height: 44px;
-  padding: 0;
-  margin: 0;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #cfd4dc;
-  font-size: 15px;
+.rc-bar-off {
+  position: absolute;
+  top: -9px;
+  right: 14px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #f5a623;
+  color: #1a1a1a;
+  font-size: 10px;
   font-weight: 800;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
-}
-.rc-seg-btn:active {
-  transform: scale(0.92);
-}
-.rc-seg-btn.on {
-  background: #4285f4;
-  color: #fff;
-  box-shadow: 0 3px 10px rgba(66, 133, 244, 0.5);
-}
-
-.rc-foot {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11px;
-  color: #9aa1ad;
-}
-.rc-foot-off {
-  color: #f5a623;
 }

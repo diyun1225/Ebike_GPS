@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { computeBaseline } from "./decision.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { computeBaseline, zoneFromHr } from "./decision.js";
 import { useHeartRateEngine } from "./useHeartRateEngine.js";
 import { useBle } from "../../ble/BleContext.jsx";
+import { fiToPct } from "../../ble/vitalsBle.js";
 import heartIcon from "../../assets/icon-heart.png";
 import lungsIcon from "../../assets/icon-lungs.png";
 
@@ -245,7 +246,42 @@ export default function HeartRateMode({ onBack }) {
   const [demoBand, setDemoBand] = useState(null); // null=關、-1=隨機、0/1/2=低/中/高
   const [demoOpen, setDemoOpen] = useState(false); // demo 面板是否展開
   const { live } = useHeartRateEngine(base, demoBand);
-  const { data } = useBle(); // 主畫面連好的共用連線，這裡讀車輛數據
+  // data=自行車車況；pi=樹莓派生理量測（hr/rr/fi）；setAssist=送真車輔助力控制指令
+  const { data, pi, phase, canControl, isDemo, setAssist } = useBle();
+
+  // 心肺模式自動控制輔助力：把引擎決策出的段位，用真車控制指令送出。
+  //   指令＝ "ASSIST,<0-5>"（走 ble.setAssist → 韌體 control_set_assist_level，收 0~5），
+  //   與 BLE/ble_phone.html 的助力按鈕同一條路徑。段位 6（無輔助）對應 0（off）。
+  // 只在「連到真車、可控制、非模擬」且段位有變動時才送，避免每 0.5 秒洗爆 BLE。
+  const lastAssistRef = useRef(null);
+  useEffect(() => {
+    if (isDemo || phase !== "connected" || !canControl) {
+      lastAssistRef.current = null; // 斷線/模擬：清掉，之後重連第一筒仍會送
+      return;
+    }
+    if (live?.gear == null) return;
+    const level = live.gear === 6 ? 0 : clamp(live.gear, 0, 5);
+    if (level === lastAssistRef.current) return;
+    lastAssistRef.current = level;
+    setAssist(level);
+  }, [live?.gear, isDemo, phase, canControl, setAssist]);
+
+  // 樹莓派已連線且非 demo 時，改用真實 hr/rr/疲勞值顯示（並依真實心率重算強度區間顏色）。
+  // 註：輔助力段數的決策仍走引擎（目前吃模擬心率）；要改吃真實值可再接。
+  const liveShown = useMemo(() => {
+    if (!live || demoBand != null) return live;
+    const v = pi?.vitals;
+    if (!v || (v.hr == null && v.rr == null && v.fi == null)) return live;
+    const hr = v.hr ?? live.hr;
+    const rr = v.rr ?? live.rr;
+    return {
+      ...live,
+      hr,
+      rr,
+      fatigue: fiToPct(v.fi) ?? live.fatigue,
+      zone: v.hr != null && base ? zoneFromHr(hr, base) : live.zone,
+    };
+  }, [live, pi?.vitals, demoBand, base]);
 
   // 選 demo 強度：沒設基準線時先套預設值，再套用選到的強度
   const pickDemo = (band) => {
@@ -263,7 +299,7 @@ export default function HeartRateMode({ onBack }) {
   return (
     <div
       className="dash hr"
-      style={{ "--zc": live?.zone?.color || "#ff8aa3" }}
+      style={{ "--zc": liveShown?.zone?.color || "#ff8aa3" }}
     >
       <button
         className="mode-back"
@@ -306,10 +342,10 @@ export default function HeartRateMode({ onBack }) {
       </div>
 
       {!base && <BaselineForm onStart={setBase} />}
-      {base && live && (
+      {base && liveShown && (
         <Dashboard
           base={base}
-          live={live}
+          live={liveShown}
           data={demoBand != null ? live.tele : data}
         />
       )}
