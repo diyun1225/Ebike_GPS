@@ -30,6 +30,13 @@ const UI_REFRESH_MS = 200; // UI 刷新頻率（5Hz）；收封包本身不受�
 const MAX_LOG = 300;
 const MAX_RAW = 200;
 
+// 助力控制 ACK（車→host，送 0x2940015 後回覆）。Response Code 在 byte0 的 bit4~7。
+// 這台車段位無法直接讀回，靠這個確認有沒有被採納。
+const ASSISTACK_ID = 0x2940014;
+// TODO(韌體)：指令表值(hex)欄是「-」，成功碼尚未給定；先把收到的 code 記到診斷 log，
+//   ASSIST_ACK_SUCCESS 確認後填正確值即可讓「已採納」判定生效。
+const ASSIST_ACK_SUCCESS = 0x1;
+
 export function useBleTelemetry() {
   const [phase, setPhase] = useState("idle");
   const [status, setStatus] = useState("尚未連線");
@@ -41,6 +48,7 @@ export function useBleTelemetry() {
   const [commandedAssist, setCommandedAssist] = useState(null); // 最後一次設定的助力段位（畫面回饋）
   const [commandedSuspension, setCommandedSuspension] = useState(null); // 最後一次設定的避震段（畫面回饋，暫無遙測）
   const [isDemo, setIsDemo] = useState(false); // 是否在跑「模擬資料」（沒真車時預覽畫面用）
+  const [assistAck, setAssistAck] = useState(null); // 最後一次助力 ACK { code, ok }
 
   const connRef = useRef(null);
   const ackWaitersRef = useRef([]); // 等待 MODEACK 的 promise resolver 清單
@@ -124,6 +132,21 @@ export function useBleTelemetry() {
           dirtyRef.current = true;
         },
         onFrame: (f) => {
+          // 助力 ACK（0x2940014）：送 ASSIST 後車端回覆，Response Code 在 byte0 bit4~7。
+          if (f && f.id === ASSISTACK_ID) {
+            const code = ((f.data?.[0] ?? 0) >> 4) & 0x0f;
+            const okAck = code === ASSIST_ACK_SUCCESS;
+            setAssistAck({ code, ok: okAck });
+            logBufRef.current.unshift(
+              `[${nowStr()}] ${okAck ? "✓" : "•"} 助力 ACK code=0x${code
+                .toString(16)
+                .toUpperCase()}`
+            );
+            if (logBufRef.current.length > MAX_LOG) logBufRef.current.length = MAX_LOG;
+            dirtyRef.current = true;
+            return;
+          }
+
           // 收到 MODEACK → 喚醒對應的等待者（模式碼相符，或不指定碼的都算）
           const ack = parseModeAck(f);
           if (!ack) return;
@@ -279,6 +302,13 @@ export function useBleTelemetry() {
     [sendCommand]
   );
 
+  // 電子坐墊（Dropper）：長按解鎖時送 UNLOCK，放開重新上鎖時送 LOCK（0x2940035）
+  const unlockSeat = useCallback(() => sendCommand("DROPPER,UNLOCK"), [sendCommand]);
+  const lockSeat = useCallback(() => sendCommand("DROPPER,LOCK"), [sendCommand]);
+
+  // 系統關機（0x2940005，SYSTEM,OFF）。⚠️ 不可逆：電池停止供電，需重開機才會回來。
+  const systemOff = useCallback(() => sendCommand("SYSTEM,OFF"), [sendCommand]);
+
   // 離開頁面/卸載時自動斷線、停掉計時器，避免佔用連線
   useEffect(() => {
     return () => {
@@ -307,6 +337,10 @@ export function useBleTelemetry() {
     shiftDown,
     setAssist,
     setSuspension,
+    unlockSeat,
+    lockSeat,
+    systemOff,
+    assistAck,
     isDemo,
     startDemo,
     stopDemo,

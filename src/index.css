@@ -777,7 +777,7 @@ button:disabled {
   position: relative;
   z-index: 1;
   text-align: center;
-  margin-top: 12vh;
+  margin-top: 5vh;
   animation: homeHeadIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .home2-title {
@@ -1524,13 +1524,13 @@ button:disabled {
 
 /* ── 主畫面：連線狀態按鈕（自行車 + 樹莓派，左上直向堆疊）──────── */
 .home-ble-stack {
-  position: absolute;
-  top: 14px;
-  left: 14px;
+  position: relative; /* 排在內容流裡（非絕對定位），才不會蓋到標題 */
   z-index: 40;
+  width: 100%;
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
 }
 .home-ble {
@@ -1557,6 +1557,152 @@ button:disabled {
 .home-ble-txt {
   white-space: nowrap;
 }
+/* 首頁關機鈕（右上角） */
+.home-power {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 40;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 3px 10px rgba(30, 40, 46, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.home-power:active {
+  transform: scale(0.94);
+}
+.home-power img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  position: relative;
+  z-index: 1;
+}
+.home-power.holding {
+  background: rgba(255, 235, 232, 0.95);
+}
+
+/* 長按進度環：按住時由空到滿花 1.5s（需與 HomeScreen 的 POWER_OFF_MS 一致） */
+.home-power-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg); /* 從 12 點鐘方向開始填 */
+  pointer-events: none;
+}
+.home-power-ring-bg {
+  fill: none;
+  stroke: rgba(224, 83, 61, 0.16);
+  stroke-width: 3;
+}
+.home-power-ring-fg {
+  fill: none;
+  stroke: #e0533d;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 126; /* 2πr, r=20 */
+  stroke-dashoffset: 126; /* 預設空 */
+}
+.home-power.holding .home-power-ring-fg {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 1.5s linear;
+}
+
+/* 長按提示 / 短暫訊息（未連線、已送出） */
+.home-power-hint,
+.home-power-msg {
+  position: absolute;
+  top: 60px;
+  right: 14px;
+  z-index: 41;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(20, 26, 30, 0.82);
+  box-shadow: 0 3px 10px rgba(30, 40, 46, 0.22);
+}
+.home-power-msg {
+  background: rgba(224, 83, 61, 0.94);
+}
+
+/* 關機二次確認視窗 */
+.power-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 26, 30, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.power-modal {
+  width: min(300px, 82%);
+  background: #fff;
+  border-radius: 18px;
+  padding: 22px 20px 18px;
+  text-align: center;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+}
+.power-modal-icon {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  margin-bottom: 6px;
+}
+.power-modal h3 {
+  margin: 4px 0 8px;
+  font-size: 18px;
+  color: #23342b;
+}
+.power-modal-sub {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #6b7a72;
+  margin: 0 0 16px;
+}
+.power-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+.power-btn {
+  flex: 1;
+  padding: 11px;
+  margin: 0;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.power-btn.cancel {
+  background: #eef1ef;
+  color: #45555e;
+}
+.power-btn.danger {
+  background: #e0533d;
+  color: #fff;
+}
+.power-btn.danger:disabled {
+  background: #e6b3aa;
+  cursor: not-allowed;
+}
+
 .home-ble-err {
   color: #c0392b;
   font-weight: 700;

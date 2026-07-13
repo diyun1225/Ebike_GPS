@@ -1,8 +1,10 @@
 // 主畫面：選擇要進入哪個模式
 // 新增模式時，在這個陣列加一筆、再到 App.jsx 接上對應元件即可。
 // id 是「路由用」的代號（不要亂改，App.jsx 靠它切換）；圖是 Canva 做好的按鈕（圓圈+icon+文字都在裡面）。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BleConnectPanel from "./ble/BleConnectPanel.jsx";
+import { useBle } from "./ble/BleContext.jsx";
+import powerImg from "./assets/power-2.png";
 import normalImg from "./assets/mode-normal.png";
 import batteryImg from "./assets/mode-battery.png";
 import heartImg from "./assets/mode-heart.png";
@@ -71,10 +73,51 @@ const MODES = [
   // },
 ];
 
+// 關機長按時間（ms）。此值需與 CSS .home-power-ring-fg 的 transition 時間一致。
+const POWER_OFF_MS = 1500;
+
 export default function HomeScreen({ onSelect, pending }) {
   const [picked, setPicked] = useState(null); // 已選的模式 id（播放動畫用）
   // 擴散轉場：從被點的按鈕中心，用該模式的顏色鋪滿整個畫面
   const [flood, setFlood] = useState(null); // { color, x, y }
+  const ble = useBle();
+  const canPower = ble.phase === "connected" && ble.canControl;
+
+  // 關機：改成「長按」才觸發，避免誤按（關機不可逆）。按住滿 POWER_OFF_MS 才送指令，
+  // 提早放開即取消；按鈕外圈有進度環顯示還要按多久。
+  const [powerHold, setPowerHold] = useState(false);
+  const [powerMsg, setPowerMsg] = useState(""); // 短暫提示（未連線 / 已送出）
+  const powerTimer = useRef(null);
+  const powerMsgTimer = useRef(null);
+
+  const flashPowerMsg = (t) => {
+    setPowerMsg(t);
+    clearTimeout(powerMsgTimer.current);
+    powerMsgTimer.current = setTimeout(() => setPowerMsg(""), 2200);
+  };
+  const onPowerDown = () => {
+    if (!canPower) {
+      flashPowerMsg("尚未連線運算板，無法關機");
+      return;
+    }
+    setPowerHold(true);
+    powerTimer.current = setTimeout(() => {
+      setPowerHold(false);
+      ble.systemOff();
+      flashPowerMsg("已送出關機指令");
+    }, POWER_OFF_MS);
+  };
+  const onPowerUp = () => {
+    clearTimeout(powerTimer.current);
+    setPowerHold(false);
+  };
+  useEffect(
+    () => () => {
+      clearTimeout(powerTimer.current);
+      clearTimeout(powerMsgTimer.current);
+    },
+    []
+  );
 
   // 確認視窗被取消（pending 清空但沒真的進入）→ 把動畫狀態復原，避免卡在擴散畫面
   useEffect(() => {
@@ -113,6 +156,24 @@ export default function HomeScreen({ onSelect, pending }) {
 
       <BleConnectPanel />
 
+      {/* 關機：不可逆，改為「長按」觸發。外圈進度環顯示還要按多久，放開即取消。 */}
+      <button
+        className={`home-power ${powerHold ? "holding" : ""}`}
+        onPointerDown={onPowerDown}
+        onPointerUp={onPowerUp}
+        onPointerLeave={onPowerUp}
+        onPointerCancel={onPowerUp}
+        onContextMenu={(e) => e.preventDefault()}
+        aria-label="長按關機"
+      >
+        <svg className="home-power-ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle className="home-power-ring-bg" cx="22" cy="22" r="20" />
+          <circle className="home-power-ring-fg" cx="22" cy="22" r="20" />
+        </svg>
+        <img src={powerImg} alt="關機" draggable="false" />
+      </button>
+      {powerHold && <div className="home-power-hint">持續按住…放開取消</div>}
+      {powerMsg && <div className="home-power-msg">{powerMsg}</div>}
 
       <div className="home2-head">
         <h1 className="home2-title">E-bike 模式選擇</h1>
@@ -151,6 +212,7 @@ export default function HomeScreen({ onSelect, pending }) {
           </button>
         ))}
       </div>
+
     </div>
   );
 }

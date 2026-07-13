@@ -15,10 +15,10 @@
 const SERVICE = "0000cc01-c3d5-40b4-ab51-611746a316f3";
 const TX = "0000cc03-c3d5-40b4-ab51-611746a316f3"; // 板 → host（notify）
 
-// fi 可能是 0~1（例 0.83）或 0~100，統一轉成 0~100 的疲勞百分比。
+// fi 是 0~1 的疲勞值（例 0.83），轉成 0~100 的百分比顯示。
 export function fiToPct(fi) {
   if (fi == null || !Number.isFinite(fi)) return null;
-  return Math.round(fi <= 1 ? fi * 100 : fi);
+  return Math.round(Math.max(0, Math.min(1, fi)) * 100);
 }
 
 // 從 JSON 物件挑 hr/rr/fi（大小寫都接受），只回傳這包真的有帶到的欄位

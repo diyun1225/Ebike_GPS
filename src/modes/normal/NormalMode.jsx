@@ -103,13 +103,15 @@ function AssistLevel({ level }) {
 
 // 電子坐墊：預設鎖定，長按鎖頭才解鎖，避免騎乘中誤觸。
 // 解鎖後只要按住鎖頭就維持解鎖；一放開就立刻重新上鎖。
-// 目前只做畫面回饋；CAN 指令晚點再接（見下方 TODO）。
+// CAN：長按解鎖完成 → 送 DROPPER,UNLOCK；放開重新上鎖 → 送 DROPPER,LOCK（0x2940035）。
 const SEAT_UNLOCK_MS = 700; // 長按這麼久才解鎖
 
 function SeatControl() {
+  const { unlockSeat, lockSeat } = useBle();
   const [locked, setLocked] = useState(true);
   const [holding, setHolding] = useState(false); // 解鎖長按進行中
   const unlockTimer = useRef(null);
+  const unlockedRef = useRef(false); // 是否真的解鎖過（避免短按也送 LOCK）
 
   // 鎖頭：長按解鎖；放開就重新上鎖
   const onLockDown = () => {
@@ -118,14 +120,18 @@ function SeatControl() {
     unlockTimer.current = setTimeout(() => {
       setHolding(false);
       setLocked(false);
-      // TODO: 之後在這裡送電子坐墊解鎖的 CAN 指令
+      unlockedRef.current = true;
+      unlockSeat(); // 送 DROPPER,UNLOCK（未連線時 sendCommand 內部安全 no-op）
     }, SEAT_UNLOCK_MS);
   };
   const onLockUp = () => {
     setHolding(false);
     clearTimeout(unlockTimer.current);
     setLocked(true); // 放開就上鎖
-    // TODO: 之後在這裡送電子坐墊上鎖的 CAN 指令
+    if (unlockedRef.current) {
+      unlockedRef.current = false;
+      lockSeat(); // 只有真的解鎖過才送 DROPPER,LOCK，短按不送
+    }
   };
 
   useEffect(() => () => {
