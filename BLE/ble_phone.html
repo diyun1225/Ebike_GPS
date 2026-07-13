@@ -12,6 +12,7 @@
   <button id="clearBtn">清空</button>
   <p id="status">單車:尚未連線</p>
   <p id="aiStatus">毫米波板:尚未連線</p>
+  <p id="mqttStatus">MQTT(生理→雲):未連線</p>
 
   <h4>控制</h4>
   <button id="shiftUpBtn" disabled>升檔 ▲</button>
@@ -77,6 +78,8 @@
   <h4>原始封包(最新在最上面)</h4>
   <pre id="raw">(尚未收到封包)</pre>
 
+  <!-- MQTT over WebSocket 用戶端(把毫米波 hr/rr/fi 發到 broker)。正式站要完全自帶就把它下載到本地改成 src="mqtt.min.js" -->
+  <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
   <script src="ccpa_decode.js"></script>
   <script>
     const SERVICE = "0000cc01-c3d5-40b4-ab51-611746a316f3";
@@ -134,6 +137,43 @@
       return name ? `${lvl} (${name})` : String(lvl);
     }
 
+    // ── 毫米波生理資料 → MQTT(發到 ouo/v1/vehicle/state,source:"hr")────────────
+    // ⚠️ 瀏覽器不能連原生 MQTT(1883),只能走 MQTT over WebSocket。
+    //    這台 broker 是 EMQX(118.163.180.29),WebSocket 埠實測:8083(ws)、8084(wss,TLS),路徑要 /mqtt。
+    //    依網頁協定自動選:
+    //      本機/http  → ws://…:8083/mqtt (明文)
+    //      正式站/https → wss://…:8084/mqtt(必須,否則被瀏覽器擋 mixed content)
+    const MQTT_WS_URL = (location.protocol === "https:")
+      ? "wss://118.163.180.29:8084/mqtt"
+      : "ws://118.163.180.29:8083/mqtt";
+    const MQTT_STATE_TOPIC = "ouo/v1/vehicle/state";
+    let mqttClient = null;
+    function setMqttStatus(t) { const el = document.getElementById("mqttStatus"); if (el) el.textContent = "MQTT(生理→雲):" + t; }
+    function mqttEnsure() {
+      if (mqttClient) return;                                   // 已連/連線中就不重複建
+      if (typeof mqtt === "undefined") { setMqttStatus("mqtt.js 未載入(檢查網路/CDN)"); return; }
+      try {
+        setMqttStatus("連線中… " + MQTT_WS_URL);
+        mqttClient = mqtt.connect(MQTT_WS_URL, {
+          reconnectPeriod: 3000, connectTimeout: 4000,
+          clientId: "web-hr-" + Math.random().toString(16).slice(2, 8),
+        });
+        mqttClient.on("connect",   () => { setMqttStatus("已連線"); log("✅ MQTT 已連線 " + MQTT_WS_URL); });
+        mqttClient.on("reconnect", () => setMqttStatus("重連中…"));
+        mqttClient.on("close",     () => setMqttStatus("已斷線"));
+        mqttClient.on("error",     (e) => { setMqttStatus("錯誤:" + e.message); log("✗ MQTT 錯誤:" + e.message); });
+      } catch (e) { log("✗ MQTT 連線失敗:" + e.message); setMqttStatus("連線失敗:" + e.message); }
+    }
+    // 把目前 hr/rr/fi 打包成 source:"hr" 一包發出去(欄位名對齊 t.txt schema)。
+    function publishVitals() {
+      if (!mqttClient || !mqttClient.connected) return;         // 還沒連上就先不發(等連上後下一包再送)
+      const msg = { source: "hr", timestamp_ms: Date.now() };
+      if (vitals.hr != null) msg.heart_rate_bpm = vitals.hr;    // 心率 bpm
+      if (vitals.rr != null) msg.r_rate_bpm     = vitals.rr;    // 呼吸率 bpm
+      if (vitals.fi != null) msg.fatigue_pct    = vitals.fi;    // 疲憊值(百分比;schema 沒有此欄,額外帶,原樣不縮放)
+      mqttClient.publish(MQTT_STATE_TOPIC, JSON.stringify(msg));
+    }
+
     // ── AI 板生理量測(心率 HR / 呼吸率 RR / FI)────────────────────────
     // 走同一個 TX 特徵(UUID 相同),但送的是純 JSON 一行(不是 ID= 的 CAN 封包),例:
     //   {"hr":72,"rr":16,"fi":0.83}
@@ -150,6 +190,9 @@
       if (hr !== undefined) vitals.hr = hr;
       if (rr !== undefined) vitals.rr = rr;
       if (fi !== undefined) vitals.fi = fi;
+      // 收到生理資料 → 連上 MQTT(第一次)並打包發到 vehicle/state(source:"hr")
+      mqttEnsure();
+      publishVitals();
     }
 
     // ── 解碼後顯示 ──────────────────────────────────────────────────────

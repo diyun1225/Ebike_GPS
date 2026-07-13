@@ -17,9 +17,13 @@ const BleContext = createContext(null);
 export function BleProvider({ children }) {
   const bike = useBleTelemetry(); // 第一條連線：自行車（車況 + 控制）
   const pi = useVitalsBle(); //      第二條連線：樹莓派（hr/rr/fi 生理量測）
+  // 統一生理量測來源：毫米波 JSON 可能走「樹莓派專線」或「單車 TX 混流」進來。
+  // 優先用專線（有 hr），沒有就用單車那條解出來的。模式一律讀 ble.vitals，不用管走哪條。
+  const vitals =
+    pi.vitals && pi.vitals.hr != null ? pi.vitals : bike.vitals;
   // 相容既有用法：ble.* 仍是自行車；樹莓派掛在 ble.pi 底下（ble.pi.connect / ble.pi.vitals）
   return (
-    <BleContext.Provider value={{ ...bike, pi }}>
+    <BleContext.Provider value={{ ...bike, pi, vitals }}>
       {children}
     </BleContext.Provider>
   );

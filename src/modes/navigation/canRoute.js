@@ -1,21 +1,19 @@
-// 把「電量管理模式」導航切出的路段/坡度資料，打包成 CAN 字串送給 AI 運算板。
-// 沿用 heartrate/canFrame.js 的 tx 格式：CAN,<id 16進>,<dlc>,<byte0>,<byte1>,...
-//   例：CAN,2940021,7,03,20,03,F4,01,20,03
-// AI 板固件收到後再轉成實體 CAN 幀送上匯流排。
+// canRoute.js — 電量管理模式：路段坡度 CAN 協定（編碼 + 定時傳送，對應 canRoute.md）
+//
+// 導航把路線依坡度切成路段後，透過 BLE 送 `CAN,<id 16進>,<dlc>,<byte0>,...`（newline 結尾）
+// 給 AI 板，由 AI 板轉成實體 CAN 幀。所有多位元組欄位皆為 **小端 (LE)**。
 //
 // 一趟導航送兩種訊息：
-//   ROUTE_HDR (0x2940020) 路線表頭：導航開始時送一次（route_id + 路段總數 + 總距離）
-//   ROUTE_SEG (0x2940021) 路段資料：每個路段一幀（先上傳整條剖面，行進中再回報目前段）
+//   ROUTE_HDR (0x1FA14000) 路線表頭：進入導航時送一次（route_id + 路段總數 + 總距離）
+//   ROUTE_SEG (0x1FA14001) 路段資料：先上傳整條剖面，行進中再回報目前段（並每秒重送以利同步）
 //
-// 欄位對應（AI 板 schema）：
-//   route_id           路線識別碼(string|null) → uint16（null→0；字串→16-bit 雜湊）放表頭
-//   segment_index      路段序號(number|null)   → uint8（null→0xFF）
-//   segment_distance_m 路段距離(m)             → uint16 LE（公尺，夾在 0..65535）
-//   grade_pct          坡度(%)                 → int16 LE ×100（0.01% 解析，±327%）
-//   elevation_delta_m  高度變化(m)             → int16 LE ×10（0.1m 解析，±3276m）
+// 兩種用法：
+//   1) 純編碼：routeProfileFrames() / segmentToFrame() 直接拿 frame（含 .tx 字串）自行送。
+//   2) 有狀態傳送：new RouteCan(sendCmd) → start()/setSegment()/stop()，會自動每秒重送目前段。
 
-export const ROUTE_HDR_ID = 0x2940020;
-export const ROUTE_SEG_ID = 0x2940021;
+export const ROUTE_HDR_ID = 0x1fa14000;
+export const ROUTE_SEG_ID = 0x1fa14001;
+export const RESEND_MS = 1000; // 目前段重送間隔(ms)；設 0 = 只在換段時送、不定時重送
 
 const hex2 = (b) => (b & 0xff).toString(16).toUpperCase().padStart(2, "0");
 
@@ -86,7 +84,7 @@ export function segmentFrame({
   return frame(ROUTE_SEG_ID, data);
 }
 
-// 由 slope.js 產出的 segment 物件轉成一幀路段 CAN
+// 由 slope.js 產出的 segment 物件（{index, segDist, grade, elevChange}）轉成一幀路段 CAN
 export function segmentToFrame(seg) {
   return segmentFrame({
     segmentIndex: seg.index,
@@ -102,4 +100,74 @@ export function routeProfileFrames(segments = [], routeId = null, totalDistanceM
     routeHeaderFrame({ routeId, segmentCount: segments.length, totalDistanceM }),
     ...segments.map(segmentToFrame),
   ];
+}
+
+// 把一段整理成「模型 schema」欄位（欄名同 canRoute.md，給 console.table 看的）
+export function segRow(seg, routeId = null) {
+  return {
+    route_id: `0x${routeIdToU16(routeId).toString(16).toUpperCase()}`,
+    segment_index: seg.index,
+    segment_distance_m: Math.round(seg.segDist),
+    grade_pct: +seg.grade.toFixed(2),
+    elevation_delta_m: +seg.elevChange.toFixed(1),
+    tx: segmentToFrame(seg).tx,
+  };
+}
+
+// 有狀態傳送器：start() 送表頭+全段，之後「目前段」每秒自動重送（讓運算板中途連上也能同步）。
+//   const rc = new RouteCan(sendCan);                         // sendCan(frame)：把 frame.tx 寫到 BLE
+//   rc.start({ routeId, segments, totalDistanceM });          // 進入導航
+//   rc.setSegment(idx);                                       // 行進中換段
+//   rc.stop();                                                // 離開導航（務必呼叫，清掉計時器）
+export class RouteCan {
+  constructor(send) {
+    this.send = send;
+    this.segments = [];
+    this.cur = -1;
+    this.timer = null;
+  }
+
+  start({ routeId = null, segments = [], totalDistanceM = 0 } = {}) {
+    this.stop();
+    this.segments = segments;
+    this.routeId = routeId;
+    // 表頭 + 全段先上傳一次
+    const frames = routeProfileFrames(segments, routeId, totalDistanceM);
+    frames.forEach((f) => this.send(f));
+    // ── 測試用：把整條路線整理好印到 console（不論有沒有連 BLE 都會印）──
+    console.groupCollapsed(
+      `📍 路線上傳 route_id=${routeId ?? "(null)"} → 0x${routeIdToU16(routeId)
+        .toString(16)
+        .toUpperCase()}｜${segments.length} 段｜總距 ${Math.round(totalDistanceM)} m`
+    );
+    console.log("表頭 tx:", frames[0].tx);
+    console.table(segments.map((s) => segRow(s, routeId)));
+    console.groupEnd();
+    if (segments.length) this.setSegment(0);
+  }
+
+  setSegment(i) {
+    if (i < 0 || i >= this.segments.length) return;
+    this.cur = i;
+    const s = this.segments[i];
+    console.log(
+      `➡️ 目前段 #${s.index}：${Math.round(s.segDist)}m, ${s.grade.toFixed(
+        2
+      )}%, Δ${s.elevChange.toFixed(1)}m ｜ ${segmentToFrame(s).tx}`
+    );
+    this._sendCur();
+    clearInterval(this.timer);
+    this.timer = null;
+    if (RESEND_MS > 0) this.timer = setInterval(() => this._sendCur(), RESEND_MS);
+  }
+
+  _sendCur() {
+    if (this.cur >= 0) this.send(segmentToFrame(this.segments[this.cur]));
+  }
+
+  stop() {
+    clearInterval(this.timer);
+    this.timer = null;
+    this.cur = -1;
+  }
 }

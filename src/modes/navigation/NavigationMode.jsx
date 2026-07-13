@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useGoogleMaps } from "./useGoogleMaps.js";
 import { buildAutoSegments, gradeColor, fmtDist } from "./slope.js";
 import { estimateUsedPct, arrivalTime } from "./battery.js";
-import { routeProfileFrames, segmentToFrame } from "./canRoute.js";
+import { RouteCan } from "./canRoute.js";
 import { publishRoute, publishGps, endMapSync } from "../../shared/mapSyncMqtt.js";
 import { useBle } from "../../ble/BleContext.jsx";
 import RouteForm from "./components/RouteForm.jsx";
@@ -144,6 +144,10 @@ export default function NavigationMode({ onBack }) {
     b.sendCommand(typeof frame === "string" ? frame : frame.tx);
   }, []);
 
+  // 路段 CAN 傳送器（表頭+全段一次；目前段每秒自動重送，讓運算板中途連上也同步）
+  const routeCanRef = useRef(null);
+  if (!routeCanRef.current) routeCanRef.current = new RouteCan(sendCan);
+
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
   const dirServiceRef = useRef(null);
@@ -232,8 +236,12 @@ export default function NavigationMode({ onBack }) {
     const route = routeRef.current;
     if (!route?.segments?.length) return;
     prevSegIdxRef.current = -1; // 重置，讓行進中第一段也會回報
-    const frames = routeProfileFrames(route.segments, route.routeId, route.total);
-    frames.forEach((f) => sendCan(f));
+    // 表頭 + 全段一次上傳；之後目前段每秒自動重送（離開導航時 cleanup 會 stop）
+    routeCanRef.current.start({
+      routeId: route.routeId,
+      segments: route.segments,
+      totalDistanceM: route.total,
+    });
 
     // 同步發送給網頁後台：一進導航就 publish 整條路線（retain，後台晚連也收得到）
     publishRoute({
@@ -247,6 +255,8 @@ export default function NavigationMode({ onBack }) {
       maxGrade: +route.maxGrade.toFixed(1),
       segments: route.segProfile, // 整條路分段坡度 + 每段幾何
     });
+
+    return () => routeCanRef.current.stop(); // 離開導航 / 重算前，停掉目前段的定時重送
   }, [phase, sendCan, routeVersion]);
 
   // 模擬騎乘：沿路線推進，速度/踏頻/輔助/電量隨坡度變化
@@ -337,9 +347,8 @@ export default function NavigationMode({ onBack }) {
           })
         );
         prevSegIdxRef.current = segIdx;
-        // 換段就回報目前所在路段的坡度給 AI 板
-        const seg = route.segments?.[segIdx];
-        if (seg) sendCan(segmentToFrame(seg));
+        // 換段就回報目前所在路段（RouteCan 會持續每秒重送這段）
+        routeCanRef.current.setSegment(segIdx);
       }
 
       // 數據面板節流更新（每 250ms 一次，避免每幀重繪卡頓）
@@ -531,9 +540,8 @@ export default function NavigationMode({ onBack }) {
             })
           );
           prevSegIdxRef.current = segIdx;
-          // 換段就回報目前所在路段的坡度給 AI 板
-          const seg = route.segments?.[segIdx];
-          if (seg) sendCan(segmentToFrame(seg));
+          // 換段就回報目前所在路段（RouteCan 會持續每秒重送這段）
+          routeCanRef.current.setSegment(segIdx);
         }
 
         // 下一個轉彎

@@ -107,21 +107,24 @@ function AssistLevel({ level }) {
 const SEAT_UNLOCK_MS = 700; // 長按這麼久才解鎖
 
 function SeatControl() {
-  const { unlockSeat, lockSeat } = useBle();
+  const { unlockSeat, lockSeat, canControl } = useBle();
   const [locked, setLocked] = useState(true);
   const [holding, setHolding] = useState(false); // 解鎖長按進行中
   const unlockTimer = useRef(null);
   const unlockedRef = useRef(false); // 是否真的解鎖過（避免短按也送 LOCK）
 
   // 鎖頭：長按解鎖；放開就重新上鎖
-  const onLockDown = () => {
+  const onLockDown = (e) => {
+    // 觸控時鎖定 pointer 到本按鈕，避免微小位移被判成手勢而中斷長按
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    if (!canControl) return; // 沒有可送控制指令的連線：不假裝解鎖，改在下方顯示提示
     if (!locked) return; // 已解鎖：維持解鎖，放開時才上鎖
     setHolding(true);
     unlockTimer.current = setTimeout(() => {
       setHolding(false);
       setLocked(false);
       unlockedRef.current = true;
-      unlockSeat(); // 送 DROPPER,UNLOCK（未連線時 sendCommand 內部安全 no-op）
+      unlockSeat(); // 送 DROPPER,UNLOCK
     }, SEAT_UNLOCK_MS);
   };
   const onLockUp = () => {
@@ -148,7 +151,6 @@ function SeatControl() {
             className={`nm-seat-lock ${holding ? "holding" : ""}`}
             onPointerDown={onLockDown}
             onPointerUp={onLockUp}
-            onPointerLeave={onLockUp}
             onPointerCancel={onLockUp}
             onContextMenu={(e) => e.preventDefault()}
             aria-label={locked ? "長按解鎖" : "已解鎖，放開上鎖"}
@@ -163,7 +165,9 @@ function SeatControl() {
         </div>
       </div>
       <div className="nm-seat-hint">
-        {locked
+        {!canControl
+          ? "⚠ 尚未連線可控制的車，指令不會送出"
+          : locked
           ? holding
             ? "按住解鎖中…"
             : "已鎖定 · 長按鎖頭解鎖"
@@ -263,15 +267,16 @@ export default function NormalMode({ onBack }) {
     logLines,
     rawLines,
     clearLog,
-    pi, // 樹莓派連線：心率 HR / 呼吸率 RR / 疲勞值 FI
+    pi, // 樹莓派連線（狀態顯示 / 連線按鈕用）
+    vitals, // 統一生理量測（毫米波 hr/rr/fi，不管走樹莓派專線或單車 TX）
   } = useBle(); // 共用 App 層那條連線（連線在主畫面做，這裡只讀資料）
   const [confirmExit, setConfirmExit] = useState(false);
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
   const connected = phase === "connected";
   const piConnected = pi?.phase === "connected";
 
-  // 把樹莓派的生理量測併進車況資料：hr/rr/疲勞度（fi）。樹莓派沒帶到就保留車況原值。
-  const v = pi?.vitals;
+  // 把生理量測併進車況資料：hr/rr/疲勞度（fi）。沒帶到就保留車況原值。
+  const v = vitals;
   const view = {
     ...data,
     hr: v?.hr ?? data?.hr,

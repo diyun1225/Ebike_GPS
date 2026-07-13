@@ -244,10 +244,10 @@ export default function HeartRateMode({ onBack }) {
   const [confirmExit, setConfirmExit] = useState(false); // 返回確認視窗
   const [demoBand, setDemoBand] = useState(null); // null=關、-1=隨機、0/1/2=低/中/高
   const [demoOpen, setDemoOpen] = useState(false); // demo 面板是否展開
-  // data=自行車車況；pi=樹莓派生理量測（hr/rr/fi）；setAssist=送真車輔助力控制指令
-  const { data, pi, phase, canControl, isDemo, setAssist } = useBle();
-  // 引擎優先吃樹莓派真實 hr/rr/fi（非 demo 且已連線時）；沒有就退回模擬
-  const { live } = useHeartRateEngine(base, demoBand, pi?.vitals);
+  // data=自行車車況；vitals=統一生理量測（毫米波 hr/rr/fi，不管走樹莓派專線或單車 TX）
+  const { data, vitals, phase, canControl, isDemo, setAssist } = useBle();
+  // 引擎優先吃真實 hr/rr/fi（非 demo 且有值時）；沒有就退回模擬
+  const { live } = useHeartRateEngine(base, demoBand, vitals);
 
   // 心肺模式自動控制輔助力：把引擎決策出的段位，用真車控制指令送出。
   //   指令＝ "ASSIST,<0-5>"（走 ble.setAssist → 韌體 control_set_assist_level，收 0~5），

@@ -15,14 +15,16 @@
 const SERVICE = "0000cc01-c3d5-40b4-ab51-611746a316f3";
 const TX = "0000cc03-c3d5-40b4-ab51-611746a316f3"; // 板 → host（notify）
 
-// fi 是 0~1 的疲勞值（例 0.83），轉成 0~100 的百分比顯示。
+// fi 是疲勞值，實測資料範圍約 0~100（例 6.4、10.1），直接當百分比顯示（夾在 0~100）。
+// 註：若韌體實際範圍不是 0~100，改這裡的縮放即可。
 export function fiToPct(fi) {
   if (fi == null || !Number.isFinite(fi)) return null;
-  return Math.round(Math.max(0, Math.min(1, fi)) * 100);
+  return Math.round(Math.max(0, Math.min(100, fi)));
 }
 
-// 從 JSON 物件挑 hr/rr/fi（大小寫都接受），只回傳這包真的有帶到的欄位
-function pickVitals(obj) {
+// 從 JSON 物件挑 hr/rr/fi（大小寫都接受），只回傳這包真的有帶到的欄位。
+// 匯出給單車連線（ccpaBle）共用：毫米波 JSON 也可能跟 CAN 混在同一條 BLE TX 進來。
+export function pickVitals(obj) {
   const out = {};
   for (const k of Object.keys(obj)) {
     const lk = k.toLowerCase();
@@ -65,21 +67,34 @@ export async function connectVitals(opts = {}) {
 
   const td = new TextDecoder();
   let buf = ""; // 獨立行緩衝，與單車的分開，碎片才不會互相污染
+  let rxCount = 0;
   tx.addEventListener("characteristicvaluechanged", (e) => {
-    buf += td.decode(e.target.value);
+    const chunk = td.decode(e.target.value);
+    rxCount++;
+    // 診斷用：每次收到的原始位元組都印出來（含空行/亂碼），才看得出 Pi 到底送了什麼
+    onLog(`⑦[Pi] 收到 #${rxCount}（${e.target.value.byteLength} bytes）: ${JSON.stringify(chunk)}`);
+    buf += chunk;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i).trim();
       buf = buf.slice(i + 1);
-      if (!line || line[0] !== "{") continue; // 只認 JSON 一行
+      if (!line) continue; // 空行（心跳）忽略，不算失敗
+      if (line[0] !== "{") {
+        onLog("⚠[Pi] 丟棄：不是 JSON 開頭（非 { ）→ " + JSON.stringify(line));
+        continue;
+      }
       try {
-        const v = pickVitals(JSON.parse(line));
+        const obj = JSON.parse(line);
+        const v = pickVitals(obj);
         if (v) {
           onVitals(v);
           onLog("♥[Pi] " + line);
+        } else {
+          onLog("⚠[Pi] JSON 沒有 hr/rr/fi 欄位 → " + line);
         }
       } catch {
-        // 不是完整 JSON（被 BLE 切斷）→ 留著等下一段拼回來
+        // 這行以 { 開頭又有換行結尾卻 parse 失敗 → JSON 壞掉（已丟棄，非片段）
+        onLog("✗[Pi] JSON 解析失敗（格式壞掉，已丟棄）：" + JSON.stringify(line));
       }
     }
   });

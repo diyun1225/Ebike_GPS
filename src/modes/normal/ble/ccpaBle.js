@@ -15,6 +15,7 @@
  *   - 一個板子一次只能一個連線。
  */
 import { CcpaDecoder } from "./ccpaDecode.js";
+import { pickVitals } from "../../../ble/vitalsBle.js";
 
 const SERVICE = "0000cc01-c3d5-40b4-ab51-611746a316f3";
 const TX = "0000cc03-c3d5-40b4-ab51-611746a316f3"; // esp -> host（notify）車況
@@ -25,6 +26,7 @@ export async function ccpaBleConnect(opts) {
   const onData = opts.onData || function () {};
   const onRaw = opts.onRaw || function () {};
   const onFrame = opts.onFrame || function () {}; // 每筆解析成功的 {id,dlc,data}（給上層自行判斷 ACK 等）
+  const onVitals = opts.onVitals || function () {}; // 毫米波生理量測 {hr,rr,fi}（JSON 行，非 CAN）
   const onStatus = opts.onStatus || function () {};
   const onLog = opts.onLog || function () {}; // 診斷 log：①~⑧ 每步都記，方便在手機上看卡在哪
   const deviceName = opts.deviceName || "CCPA-Telemetry";
@@ -76,6 +78,19 @@ export async function ccpaBleConnect(opts) {
       buf = buf.slice(i + 1);
       if (!line) continue;
       onRaw(line);
+
+      // 毫米波生理量測是純 JSON 一行（{ 開頭），不是 ID= 的 CAN 封包 → 解 hr/rr/fi。
+      // （對照 BLE/ble_phone.html 的 onNotify：mmWave JSON 跟 CAN frame 混在同一條 TX。）
+      if (line[0] === "{") {
+        try {
+          const v = pickVitals(JSON.parse(line));
+          if (v) { onVitals(v); onLog("♥ 生理量測：" + line); }
+          continue;
+        } catch {
+          // 不是完整 JSON（可能被 BLE 切斷）→ 往下當碎片處理
+        }
+      }
+
       const f = CcpaDecoder.parseRawLine(line);
       if (!f) {
         onLog("⑧ ✗ 解析失敗（格式不符）：" + JSON.stringify(line));

@@ -7,6 +7,9 @@ import { BleProvider, useBle } from "./ble/BleContext.jsx";
 import { modeIdToFrame, MODE_CODE_BY_ID, MODE_LABEL_BY_ID } from "./modeFrame.js";
 import RideControls from "./controls/RideControls.jsx";
 
+// 等運算板回 MODEACK 的逾時（ms）。板子回應較慢，給久一點避免誤判逾時。
+const MODEACK_TIMEOUT_MS = 8000;
+
 // 整個 App 的最上層：用 BleProvider 讓全 App 共用「一條」與運算板的 BLE 連線，
 // 再在 AppInner 處理「選模式 → 確認 → 送 MODEREQ → 等板子 ACK → 進入」的流程。
 export default function App() {
@@ -57,7 +60,7 @@ function AppInner() {
       setFlow({ busy: true, msg: "傳送模式指令給運算板…", error: false });
       await ble.sendCommand(frame.tx);
       setFlow({ busy: true, msg: "等待運算板確認（ACK）…", error: false });
-      const ok = await ble.waitForModeAck(code, 2500);
+      const ok = await ble.waitForModeAck(code, MODEACK_TIMEOUT_MS);
       if (ok) {
         enterNow(modeId); // 收到 ACK → 進入
       } else {

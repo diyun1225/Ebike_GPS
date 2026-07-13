@@ -49,9 +49,11 @@ export function useBleTelemetry() {
   const [commandedSuspension, setCommandedSuspension] = useState(null); // 最後一次設定的避震段（畫面回饋，暫無遙測）
   const [isDemo, setIsDemo] = useState(false); // 是否在跑「模擬資料」（沒真車時預覽畫面用）
   const [assistAck, setAssistAck] = useState(null); // 最後一次助力 ACK { code, ok }
+  const [vitals, setVitals] = useState({ hr: null, rr: null, fi: null }); // 毫米波生理量測（走單車 TX 的 JSON 行）
 
   const connRef = useRef(null);
   const ackWaitersRef = useRef([]); // 等待 MODEACK 的 promise resolver 清單
+  const vitalsRef = useRef({ hr: null, rr: null, fi: null }); // 生理量測先進 ref，再由計時器刷進 state
   const demoRef = useRef(null); // 模擬資料的計時器 id
   const demoAssistRef = useRef(3); // 模擬時的助力段位（讓按段位鈕看得到變化）
 
@@ -68,6 +70,7 @@ export function useBleTelemetry() {
       if (!dirtyRef.current) return;
       dirtyRef.current = false;
       setData(snapRef.current);
+      setVitals({ ...vitalsRef.current });
       setLogLines(logBufRef.current.slice()); // 複製出新陣列參考，觸發重繪
       setRawLines(rawBufRef.current.slice());
     }, UI_REFRESH_MS);
@@ -131,6 +134,16 @@ export function useBleTelemetry() {
           }
           dirtyRef.current = true;
         },
+        onVitals: (v) => {
+          // 毫米波 JSON（hr/rr/fi）走單車 TX 進來。這包沒帶到的欄位保留上一次的值。
+          const cur = vitalsRef.current;
+          vitalsRef.current = {
+            hr: v.hr != null ? v.hr : cur.hr,
+            rr: v.rr != null ? v.rr : cur.rr,
+            fi: v.fi != null ? v.fi : cur.fi,
+          };
+          dirtyRef.current = true;
+        },
         onFrame: (f) => {
           // 助力 ACK（0x2940014）：送 ASSIST 後車端回覆，Response Code 在 byte0 bit4~7。
           if (f && f.id === ASSISTACK_ID) {
@@ -191,6 +204,8 @@ export function useBleTelemetry() {
     setCommandedAssist(null);
     snapRef.current = null; // 清空車況，斷線後畫面回到 --（不停在最後一筆舊數字）
     setData(null);
+    vitalsRef.current = { hr: null, rr: null, fi: null }; // 清空生理量測
+    setVitals({ hr: null, rr: null, fi: null });
     // 斷線時把還在等 ACK 的都收掉（當作沒收到），避免懸而未決
     ackWaitersRef.current.forEach((w) => {
       clearTimeout(w.timer);
@@ -341,6 +356,7 @@ export function useBleTelemetry() {
     lockSeat,
     systemOff,
     assistAck,
+    vitals,
     isDemo,
     startDemo,
     stopDemo,
