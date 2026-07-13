@@ -7,7 +7,7 @@
 // 三種可控項目的代號：
 //   "assist"     輔助力段位（0~5）
 //   "shift"      變速檔位（相對升/降檔）
-//   "suspension" 避震軟硬（0 最軟 ~ 5 最硬）
+//   "suspension" 避震（前叉）軟硬（可控 1 最軟 ~ 5 最硬）
 
 export const RIDE_CONTROLS_BY_MODE = {
   normal: ["shift", "suspension", "assist"], // 一般模式：三項全可手動（底部控制條）
@@ -39,8 +39,9 @@ export const CONTROL_LABEL = {
 export const ASSIST_MIN = 0;
 export const ASSIST_MAX = 5;
 
-// 避震：0 最軟 ~ 5 最硬（共 6 段）
-export const SUSPENSION_MIN = 0;
+// 避震（前叉）：開放可控 1 最軟(0x81) ~ 5 最硬(0x85) 共 5 段；
+// 0x80（歸零段）只會出現在回報值，不開放手動設定。
+export const SUSPENSION_MIN = 1;
 export const SUSPENSION_MAX = 5;
 
 // 變速：實體雖有 10 檔，但只開放 1~9 檔可操作（第 10 檔不開放）。

@@ -19,14 +19,18 @@ const DEMO_BANDS = [
 // 心肺模式引擎：模擬「每秒一筆生理訊號」並跑流程圖的判定
 // demoBand：null=關閉、-1=隨機循環、0/1/2=固定低/中/高強度。
 // 指定固定強度時會「直接」跳到該區間，方便 demo 直接切換低中高。
-// sensor：樹莓派即時生理量測 { hr, rr, fi }（null 或 hr 為 null = 無真實感測，退回模擬）。
-export function useHeartRateEngine(base, demoBand = null, sensor = null) {
+// sensor：即時生理量測 { hr, rr, fi }（null 或 hr 為 null = 無真實感測）。
+// realOnly：true = 只用真實資料——沒收到 hr 時「不跑模擬」，回報 { waiting: true }
+//           讓畫面顯示等待狀態；false = 現狀（沒真值就退回模擬曲線）。
+export function useHeartRateEngine(base, demoBand = null, sensor = null, realOnly = false) {
   const [live, setLive] = useState(null);
   const stateRef = useRef(null);
   const demoRef = useRef(demoBand);
   demoRef.current = demoBand; // 讓計時器內永遠讀到最新的 demo 設定
   const sensorRef = useRef(sensor);
   sensorRef.current = sensor; // 同上，計時器內永遠讀到最新的感測值
+  const realOnlyRef = useRef(realOnly);
+  realOnlyRef.current = realOnly;
 
   useEffect(() => {
     if (!base) return;
@@ -54,14 +58,39 @@ export function useHeartRateEngine(base, demoBand = null, sensor = null) {
 
       const db = demoRef.current;
       const sen = sensorRef.current;
-      // 樹莓派已連線且非 demo → 直接吃真實 hr/rr/fi，不再模擬
-      const useReal = db == null && sen && sen.hr != null;
+      const hasReal = sen && sen.hr != null;
+      // 已收到真實生理量測且非 demo → 直接吃真實 hr/rr/fi，不再模擬
+      const useReal = db == null && hasReal;
+
+      // 「只用真實資料」且還沒收到 hr → 不推進模擬，回報「無數據」狀態：
+      // 畫面照常顯示圖表，數值全部給 null（UI 以「—」呈現），不跑模擬曲線。
+      if (realOnlyRef.current && db == null && !hasReal) {
+        setLive({
+          waiting: true, // 尚未收到毫米波心率（畫面用來標示來源狀態）
+          real: false,
+          hr: null,
+          rr: null,
+          dRR: null,
+          rrHighDur: 0,
+          fatigue: null,
+          zone: null,
+          intensity: null,
+          state: null,
+          note: null,
+          mode: null,
+          gear: null,
+          tele: null,
+        });
+        return;
+      }
 
       let tele = null; // 模擬時的車輛數據；真實模式為 null（改用真車 data）
 
       if (useReal) {
-        // ── 真實感測（樹莓派）──：hr/rr 直接採用，fi→疲勞度
-        s.hr = clamp(sen.hr, base.restingHr - 5, base.maxHr + 25);
+        // ── 真實感測（毫米波）──：hr/rr 直接採用，fi→疲勞度
+        // 只用「生理絕對範圍」夾極端值；不要用基準線夾——
+        // 若使用者基準線填偏（例：安靜心率填 80、實測 65），會把真值改掉，畫面變假數據。
+        s.hr = clamp(sen.hr, 30, 220);
         if (sen.rr != null) s.rr = clamp(sen.rr, 4, 60);
         if (fullSecond) {
           s.rrHist.push(s.rr);

@@ -27,6 +27,15 @@ function AppInner() {
   // 送封包 / 等 ACK 的即時狀態
   const [flow, setFlow] = useState({ busy: false, msg: "", error: false });
 
+  // 偵測「頁面被重新載入」：sessionStorage 在同一分頁的 reload 之間會保留。
+  // 掛載時旗標已存在 → 這不是第一次開啟，是頁面被重載了（dev 熱更新 / iOS 記憶體不足
+  // 自動重載…）。頁面一重載 Web Bluetooth 必斷，用這個橫幅區分「真斷線」還是「被重載」。
+  const [reloaded, setReloaded] = useState(() => {
+    const hit = sessionStorage.getItem("ebike-booted") === "1";
+    sessionStorage.setItem("ebike-booted", "1");
+    return hit;
+  });
+
   const backToHome = () => setMode(null);
 
   // 主畫面點模式 → 先跳確認視窗，還不進入
@@ -97,6 +106,13 @@ function AppInner() {
     // 才會貼齊 App 畫面邊緣，而不是整個瀏覽器視窗的邊緣。
     <div className="app-shell">
       {screen}
+      {/* 頁面重載警示：出現這條 = 剛剛整頁被重新載入（藍牙因此斷線），不是換模式造成的 */}
+      {reloaded && (
+        <div className="reload-banner" role="alert">
+          <span>⚠ 頁面被重新載入，藍牙已斷線（dev 存檔熱更新或記憶體不足所致）</span>
+          <button onClick={() => setReloaded(false)} aria-label="關閉">✕</button>
+        </div>
+      )}
       {/* 手動控制小球：只在進入某個模式後浮現（主畫面不顯示） */}
       {mode && <RideControls mode={mode} />}
       {pending && (

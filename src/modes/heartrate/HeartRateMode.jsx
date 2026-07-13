@@ -79,17 +79,18 @@ const DEMO_OPTS = [
   { band: 2, label: "高強度" },
 ];
 
-// 輔助力段數：階梯式分段（像排檔）。gear 1~5，6=無輔助（顯示為 0 Off）
+// 輔助力段數：階梯式分段（像排檔）。gear 1~5，6=無輔助（顯示為 0 Off）；
+// gear=null（真實資料模式還沒收到心率）→ 顯示「—」、不亮任何格。
 function GearBar({ gear, color }) {
   const total = 5;
-  const level = gear === 6 ? 0 : clamp(gear, 0, total); // 6=無輔助 → 顯示 0
-  const on = level;
+  const level = gear === 6 ? 0 : clamp(gear ?? 0, 0, total); // 6=無輔助 → 顯示 0
+  const on = gear == null ? 0 : level;
   return (
     <div className="hr-gear">
       <div className="hr-gear-head">
         <span>輔助力段數</span>
         <b style={{ color }}>
-          {level}：{ASSIST_LABELS[level]}
+          {gear == null ? "—" : `${level}：${ASSIST_LABELS[level]}`}
         </b>
       </div>
       <div className="hr-gear-bars">
@@ -103,6 +104,45 @@ function GearBar({ gear, color }) {
             }}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+// 樹莓派（生理量測）連線狀態列：斷線時可直接在本頁手動重連，
+// 不用回主畫面或一般模式。樣式沿用主畫面的 home-ble 膠囊。
+function PiStatusBar() {
+  const { pi } = useBle();
+  const piConnected = pi?.phase === "connected";
+  return (
+    <div className="hr-pi">
+      <div className={`home-ble ${piConnected ? "on" : ""}`}>
+        <span className={`home-ble-dot ${piConnected ? "on" : ""}`} />
+        <span className="home-ble-txt">
+          {piConnected
+            ? "樹莓派已連線"
+            : pi?.phase === "connecting"
+            ? pi.status || "連線中…"
+            : "樹莓派未連線"}
+        </span>
+        {!piConnected && pi?.phase !== "connecting" && pi?.error && (
+          <span className="home-ble-err" title={pi.error}>
+            ⚠ {pi.error}
+          </span>
+        )}
+        {piConnected ? (
+          <button className="home-ble-btn ghost" onClick={pi.disconnect}>
+            斷線
+          </button>
+        ) : (
+          <button
+            className="home-ble-btn"
+            onClick={pi?.connect}
+            disabled={pi?.phase === "connecting"}
+          >
+            {pi?.phase === "connecting" ? "連線中…" : "連線樹莓派"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -191,11 +231,15 @@ function BaselineForm({ onStart }) {
   );
 }
 
+// 真實資料模式還沒收到心率時 zone 為 null → 用中性灰當佔位，數值顯示「—」
+const ZONE_PLACEHOLDER = { name: "—", color: "#9aa7a0" };
+
 function Dashboard({ base, live, data }) {
-  const z = live.zone;
-  // 愛心跳動週期＝60/心率（越快跳越快）；呼吸 icon 週期＝60/呼吸率
-  const beatDur = `${(60 / clamp(live.hr, 40, 200)).toFixed(2)}s`;
-  const breathDur = `${(60 / clamp(live.rr, 6, 40)).toFixed(2)}s`;
+  const z = live.zone || ZONE_PLACEHOLDER;
+  const noData = live.hr == null;
+  // 愛心跳動週期＝60/心率（越快跳越快）；呼吸 icon 週期＝60/呼吸率；無數據不動畫
+  const beatDur = noData ? undefined : `${(60 / clamp(live.hr, 40, 200)).toFixed(2)}s`;
+  const breathDur = live.rr == null ? undefined : `${(60 / clamp(live.rr, 6, 40)).toFixed(2)}s`;
 
   return (
     <>
@@ -204,27 +248,37 @@ function Dashboard({ base, live, data }) {
         <span className="hr-zonepill-name">{z.name}</span>
       </div>
 
+      {/* 資料來源標示：引擎當下吃「真實感測」還是「模擬」。
+          顯示「模擬」= 引擎沒收到 hr（毫米波沒進來/走錯連線/開著 Demo），一眼可判斷。 */}
+      <div className={`hr-src ${live.real ? "real" : "sim"}`}>
+        {live.real
+          ? "● 真實感測"
+          : live.waiting
+          ? "○ 等待毫米波心率（未收到前顯示 —）"
+          : "○ 模擬資料（未收到心率）"}
+      </div>
+
       {/* 兩大生理訊號圓圈儀表 */}
       <div className="hr-rings">
         <RingGauge
-          value={live.hr}
+          value={live.hr ?? base.restingHr}
           min={base.restingHr}
           max={base.maxHr}
           color={z.color}
           icon={<img className="hr-ring-img" src={heartIcon} alt="" />}
           beatDur={beatDur}
-          num={live.hr}
+          num={fmt(live.hr)}
           unit="bpm"
           sub="心率"
         />
         <RingGauge
-          value={live.rr}
+          value={live.rr ?? 8}
           min={8}
           max={40}
           color="#2f93b5"
           icon={<img className="hr-ring-img" src={lungsIcon} alt="" />}
           beatDur={breathDur}
-          num={live.rr}
+          num={fmt(live.rr)}
           unit="次/分"
           sub="呼吸率"
         />
@@ -244,10 +298,12 @@ export default function HeartRateMode({ onBack }) {
   const [confirmExit, setConfirmExit] = useState(false); // 返回確認視窗
   const [demoBand, setDemoBand] = useState(null); // null=關、-1=隨機、0/1/2=低/中/高
   const [demoOpen, setDemoOpen] = useState(false); // demo 面板是否展開
+  // 只用真實資料：開啟後沒收到毫米波心率就顯示等待畫面，絕不跑模擬曲線
+  const [realOnly, setRealOnly] = useState(false);
   // data=自行車車況；vitals=統一生理量測（毫米波 hr/rr/fi，不管走樹莓派專線或單車 TX）
   const { data, vitals, phase, canControl, isDemo, setAssist } = useBle();
-  // 引擎優先吃真實 hr/rr/fi（非 demo 且有值時）；沒有就退回模擬
-  const { live } = useHeartRateEngine(base, demoBand, vitals);
+  // 引擎優先吃真實 hr/rr/fi（非 demo 且有值時）；沒有就依 realOnly 決定等待或模擬
+  const { live } = useHeartRateEngine(base, demoBand, vitals, realOnly);
 
   // 心肺模式自動控制輔助力：把引擎決策出的段位，用真車控制指令送出。
   //   指令＝ "ASSIST,<0-5>"（走 ble.setAssist → 韌體 control_set_assist_level，收 0~5），
@@ -266,18 +322,26 @@ export default function HeartRateMode({ onBack }) {
     setAssist(level);
   }, [live?.gear, isDemo, phase, canControl, setAssist]);
 
-  // 選 demo 強度：沒設基準線時先套預設值，再套用選到的強度
+  // 選 demo 強度：沒設基準線時先套預設值，再套用選到的強度（同時關掉「只用真實」）
   const pickDemo = (band) => {
     if (band != null && !base) setBase(computeBaseline(30, 60));
     setDemoBand(band);
+    if (band != null) setRealOnly(false); // demo 與「只用真實」互斥
     setDemoOpen(false);
   };
-  const demoLabel =
-    demoBand == null
-      ? "Demo"
-      : demoBand === -1
-      ? "Demo・隨機"
-      : `Demo・${DEMO_OPTS.find((o) => o.band === demoBand)?.label}`;
+  // 只用真實資料：關 demo、開 realOnly（沒收到心率就等待，不模擬）
+  const pickRealOnly = () => {
+    setDemoBand(null);
+    setRealOnly(true);
+    setDemoOpen(false);
+  };
+  const demoLabel = realOnly
+    ? "真實資料"
+    : demoBand == null
+    ? "Demo"
+    : demoBand === -1
+    ? "Demo・隨機"
+    : `Demo・${DEMO_OPTS.find((o) => o.band === demoBand)?.label}`;
 
   return (
     <div
@@ -302,6 +366,13 @@ export default function HeartRateMode({ onBack }) {
         </button>
         {demoOpen && (
           <div className="hr-demo-menu">
+            {/* 只用真實資料：不跑任何模擬，沒收到毫米波心率就顯示等待畫面 */}
+            <button
+              className={`hr-demo-item real ${realOnly ? "sel" : ""}`}
+              onClick={pickRealOnly}
+            >
+              只用真實資料
+            </button>
             <button
               className={`hr-demo-item ${demoBand === -1 ? "sel" : ""}`}
               onClick={() => pickDemo(-1)}
@@ -317,14 +388,24 @@ export default function HeartRateMode({ onBack }) {
                 {o.label}
               </button>
             ))}
-            <button className="hr-demo-item off" onClick={() => pickDemo(null)}>
-              關閉
+            <button
+              className={`hr-demo-item off ${demoBand == null && !realOnly ? "sel" : ""}`}
+              onClick={() => {
+                setRealOnly(false);
+                pickDemo(null);
+              }}
+            >
+              關閉（自動）
             </button>
           </div>
         )}
       </div>
 
+      {/* 樹莓派連線狀態：斷線時可就地手動重連（毫米波 hr/rr/fi 從這條來） */}
+      <PiStatusBar />
+
       {!base && <BaselineForm onStart={setBase} />}
+      {/* 只用真實資料且尚未收到心率 → 圖表照常顯示，數值以「—」呈現（不跑模擬曲線） */}
       {base && live && (
         <Dashboard
           base={base}

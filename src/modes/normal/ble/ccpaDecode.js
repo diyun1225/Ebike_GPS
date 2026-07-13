@@ -21,6 +21,7 @@ const ID = {
   BAT1_INFO06ACK: 0x1e942458, BAT1_INFO06BRO: 0x1e94245a,
   REARDERAILLEUR_INFO00ACK: 0x1e944840, REARDERAILLEUR_INFO00BRO: 0x1e944842,
   DERAILLEUR_STATE: 0x650, // 實測此車：後變速器狀態，data[0]=目前檔位(GearIndex)、data[4]=最大檔(GearRange)
+  FRONTFORK_STATE: 0x294003c, // 前叉狀態：byte0=目前段(0x80最軟~0x85最硬、0xFF移動/歸零中)、byte1=狀態碼(0正常/1堵轉逾時/2歸零失敗/3尚未歸零)
 };
 
 // 來源優先序：GENERAL_INFO 一旦給過值就鎖定，忽略 DEVICE 來源的同名值（避免兩邊打架）。
@@ -48,6 +49,7 @@ export class CcpaDecoder {
       batteryCurrentValid: false, batteryCurrentMa: 0,
       batteryTempsValid: [false, false, false, false], batteryTempsC: [0, 0, 0, 0],
       rearGearValid: false, rearGearIndex: 0, rearGearMax: 0, rearGearSource: SRC.NONE,
+      forkValid: false, forkRaw: 0, forkStatus: 0,
     };
   }
 
@@ -149,6 +151,11 @@ export class CcpaDecoder {
         }
         break;
 
+      case ID.FRONTFORK_STATE:
+        // 前叉狀態：byte0=目前段(0x80~0x85；0xFF=移動中/歸零中)、byte1=狀態碼。
+        if (dlc >= 2) { s.forkRaw = d[0]; s.forkStatus = d[1]; s.forkValid = true; }
+        break;
+
       default:
         break; // 其他 ID（含 HMI_INFO00）目前不解析
     }
@@ -170,6 +177,15 @@ export class CcpaDecoder {
       batteryCurrentMa: s.batteryCurrentValid ? s.batteryCurrentMa : null,
       batteryTempsC: s.batteryTempsC.map((t, i) => (s.batteryTempsValid[i] ? t : null)),
       rearGear: s.rearGearValid ? { index: s.rearGearIndex, max: s.rearGearMax } : null,
+      // 前叉：level=段位(0 最軟 0x80 ~ 5 最硬 0x85；移動中/未知為 null)、
+      //       moving=移動/歸零中(0xFF)、status=狀態碼(0 正常/1 堵轉逾時/2 歸零失敗/3 尚未歸零)
+      fork: s.forkValid
+        ? {
+            level: s.forkRaw >= 0x80 && s.forkRaw <= 0x85 ? s.forkRaw - 0x80 : null,
+            moving: s.forkRaw === 0xff,
+            status: s.forkStatus,
+          }
+        : null,
     };
   }
 

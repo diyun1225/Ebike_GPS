@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBle } from "../../ble/BleContext.jsx";
 import BleConnectPanel from "../../ble/BleConnectPanel.jsx";
 import { fiToPct } from "../../ble/vitalsBle.js";
+import useImuMqtt from "./useImuMqtt.js";
 import padlockIcon from "../../assets/padlock.png";
 
 // 沒有數值（null / undefined）時統一顯示破折號
@@ -200,6 +201,60 @@ function FatigueBar({ value, tip }) {
   );
 }
 
+// IMU 即時數據（MQTT ouo/v1/vehicle/state）：擺在頁面最底下，
+// 給「模型輸入 IMU → 輸出檔位」的對照用，平常不用看、要看再滑下來。
+const IMU_STATUS_TEXT = {
+  connecting: "連線中…",
+  connected: "已連線",
+  closed: "已斷線",
+};
+
+function ImuPanel({ status, imu, lastAt, assistLevel }) {
+  const gearWord = assistLevel == null ? "—" : ASSIST_WORDS[clamp(assistLevel, 0, 5)];
+  const cells = [
+    { label: "ax", value: fmt(imu?.ax_g, 3), unit: "g" },
+    { label: "ay", value: fmt(imu?.ay_g, 3), unit: "g" },
+    { label: "az", value: fmt(imu?.az_g, 3), unit: "g" },
+    { label: "gx", value: fmt(imu?.gx_dps, 3), unit: "dps" },
+    { label: "gy", value: fmt(imu?.gy_dps, 3), unit: "dps" },
+    { label: "gz", value: fmt(imu?.gz_dps, 3), unit: "dps" },
+    { label: "合加速度", value: fmt(imu?.accel_norm_g, 3), unit: "g" },
+    { label: "Roll", value: fmt(imu?.roll_deg, 2), unit: "°" },
+    ];
+  return (
+    <div className="nm-panel nm-imu">
+      <div className="nm-panel-head">
+        <span>
+          IMU 即時數據
+          <em className={`nm-imu-status ${status}`}>
+            MQTT {IMU_STATUS_TEXT[status] || status}
+          </em>
+        </span>
+        {/* 目前檔位：對照模型吃了下面這些輸入後輸出的檔位 */}
+        <b>檔位 {gearWord}</b>
+      </div>
+      <div className="nm-imu-grid">
+        {cells.map((c) => (
+          <div className="nm-imu-cell" key={c.label}>
+            <i>{c.label}</i>
+            <b>
+              {c.value}
+              <small>{c.unit}</small>
+            </b>
+          </div>
+        ))}
+      </div>
+      <div className="nm-imu-foot">
+        {imu
+          ? `timestamp_ms ${imu.timestamp_ms ?? "—"} · 最後收到 ${
+              lastAt ? new Date(lastAt).toLocaleTimeString() : "—"
+            }`
+          : "尚未收到資料（topic: ouo/v1/vehicle/state）"}
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ data }) {
   const d = data || {};
   const battTemp =
@@ -270,6 +325,7 @@ export default function NormalMode({ onBack }) {
     pi, // 樹莓派連線（狀態顯示 / 連線按鈕用）
     vitals, // 統一生理量測（毫米波 hr/rr/fi，不管走樹莓派專線或單車 TX）
   } = useBle(); // 共用 App 層那條連線（連線在主畫面做，這裡只讀資料）
+  const imuMq = useImuMqtt(); // 進入一般模式就連 MQTT 讀 IMU，離開自動斷線
   const [confirmExit, setConfirmExit] = useState(false);
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
   const connected = phase === "connected";
@@ -354,6 +410,14 @@ export default function NormalMode({ onBack }) {
           )}
         </div>
       )}
+
+      {/* IMU 即時數據（MQTT）：獨立於藍牙連線，放在頁面最底下 */}
+      <ImuPanel
+        status={imuMq.status}
+        imu={imuMq.imu}
+        lastAt={imuMq.lastAt}
+        assistLevel={view.assistLevel}
+      />
 
       {confirmExit && (
         <div className="hr-modal-backdrop" onClick={() => setConfirmExit(false)}>

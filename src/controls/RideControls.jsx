@@ -47,7 +47,7 @@ export default function RideControls({ mode }) {
 
   // 本地控制值（樂觀更新，畫面立即反應）；有遙測時以遙測為準
   const [assist, setAssistLocal] = useState(0);
-  const [susp, setSuspLocal] = useState(0);
+  const [susp, setSuspLocal] = useState(SUSPENSION_MIN);
   const [gear, setGearLocal] = useState(SHIFT_MIN);
 
   const snap = ble.data;
@@ -65,6 +65,11 @@ export default function RideControls({ mode }) {
   useEffect(() => {
     if (ble.commandedSuspension != null) setSuspLocal(ble.commandedSuspension);
   }, [ble.commandedSuspension]);
+  // 前叉回報（0x294003C）有值就以車子為準（0x80 歸零段夾回可控下限 1）
+  const forkLevel = snap?.fork?.level;
+  useEffect(() => {
+    if (forkLevel != null) setSuspLocal(clamp(forkLevel, SUSPENSION_MIN, SUSPENSION_MAX));
+  }, [forkLevel]);
 
   if (items.length === 0) return null;
 
@@ -80,6 +85,13 @@ export default function RideControls({ mode }) {
     setSuspLocal(lv);
     ble.setSuspension(lv);
   };
+
+  // 前叉狀態顯示：移動/歸零中顯示「…」；狀態碼異常時提示文字取代「軟↔硬」
+  const fork = snap?.fork;
+  const forkErrText = { 1: "堵轉/逾時", 2: "歸零失敗", 3: "尚未歸零" }[fork?.status];
+  const suspHint = fork?.moving ? "移動中…" : forkErrText || "軟↔硬";
+  // 畫面值：車子回報的目前段位優先（含 0x80 顯示 0），沒有回報才用本地樂觀值
+  const suspShown = fork?.moving ? "…" : fork?.level ?? susp;
   const doShift = (dir) => {
     setGearLocal((g) => clamp(g + dir, SHIFT_MIN, gearMax));
     if (dir > 0) ble.shiftUp();
@@ -103,12 +115,12 @@ export default function RideControls({ mode }) {
       {items.includes("suspension") && (
         <ControlCell
           label="避震"
-          hint="軟↔硬"
-          value={susp}
+          hint={suspHint}
+          value={suspShown}
           onDec={() => doSusp(susp - 1)}
           onInc={() => doSusp(susp + 1)}
-          decDisabled={susp <= SUSPENSION_MIN}
-          incDisabled={susp >= SUSPENSION_MAX}
+          decDisabled={fork?.moving || susp <= SUSPENSION_MIN}
+          incDisabled={fork?.moving || susp >= SUSPENSION_MAX}
         />
       )}
       {items.includes("assist") && (

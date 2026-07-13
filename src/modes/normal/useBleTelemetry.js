@@ -306,13 +306,14 @@ export function useBleTelemetry() {
     [sendCommand]
   );
 
-  // 避震軟硬 0~5（0 最軟、5 最硬）。
-  // TODO(韌體)：沿用 SHIFT/ASSIST 的字串指令慣例送 "SUSP,<0-5>"，待 AI 板加上
-  //   對應處理後即生效；車輛也尚未回報避震狀態，故畫面用 commandedSuspension 回饋。
+  // 前叉（避震）軟硬 1~5（1 最軟 0x81 ~ 5 最硬 0x85；0x80 歸零段不開放）。
+  // 指令 "FORK,<1-5>"：韌體 control_set_frontfork 組出 0x294003B（byte1=0x80+檔位），
+  // 與 BLE/ble_phone.html 的避震按鈕同一條路徑。目前檔位由 0x294003C 回報
+  // （見 ccpaDecode 的 fork），畫面以回報值為準、commandedSuspension 當樂觀回饋。
   const setSuspension = useCallback(
     (level) => {
       setCommandedSuspension(level);
-      sendCommand("SUSP," + level);
+      sendCommand("FORK," + level);
     },
     [sendCommand]
   );

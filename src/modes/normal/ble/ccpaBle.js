@@ -84,7 +84,9 @@ export async function ccpaBleConnect(opts) {
       if (line[0] === "{") {
         try {
           const v = pickVitals(JSON.parse(line));
-          if (v) { onVitals(v); onLog("♥ 生理量測：" + line); }
+          if (v) onLog("♥ 生理量測：" + line);
+          else onLog("⚠ JSON 沒有認得的 hr/rr/fi 欄位（把這行給工程師對欄位名）→ " + line);
+          if (v) onVitals(v);
           continue;
         } catch {
           // 不是完整 JSON（可能被 BLE 切斷）→ 往下當碎片處理

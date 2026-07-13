@@ -24,13 +24,22 @@ export function fiToPct(fi) {
 
 // 從 JSON 物件挑 hr/rr/fi（大小寫都接受），只回傳這包真的有帶到的欄位。
 // 匯出給單車連線（ccpaBle）共用：毫米波 JSON 也可能跟 CAN 混在同一條 BLE TX 進來。
+// 欄位名容錯：不同版本韌體用過不同名字（例 MQTT schema 是 heart_rate_bpm），
+// 這裡都收，統一輸出成 { hr, rr, fi }。
+const VITAL_ALIASES = {
+  hr: ["hr", "heart_rate_bpm", "heartrate", "heart_rate", "hr_bpm"],
+  rr: ["rr", "r_rate_bpm", "resp_rate", "respiration", "rr_brpm", "breath_rate"],
+  fi: ["fi", "fatigue", "fatigue_pct", "fatigue_index"],
+};
 export function pickVitals(obj) {
   const out = {};
   for (const k of Object.keys(obj)) {
     const lk = k.toLowerCase();
-    if (lk === "hr" || lk === "rr" || lk === "fi") {
-      const n = Number(obj[k]);
-      if (Number.isFinite(n)) out[lk] = n;
+    for (const std of Object.keys(VITAL_ALIASES)) {
+      if (VITAL_ALIASES[std].includes(lk)) {
+        const n = Number(obj[k]);
+        if (Number.isFinite(n)) out[std] = n;
+      }
     }
   }
   return Object.keys(out).length ? out : null;
