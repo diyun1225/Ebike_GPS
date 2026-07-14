@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBle } from "../../ble/BleContext.jsx";
 import BleConnectPanel from "../../ble/BleConnectPanel.jsx";
 import { fiToPct } from "../../ble/vitalsBle.js";
-import useImuMqtt from "./useImuMqtt.js";
+// import useImuMqtt from "./useImuMqtt.js"; // demo 前暫關 IMU/MQTT 顯示
 import padlockIcon from "../../assets/padlock.png";
 
 // 沒有數值（null / undefined）時統一顯示破折號
@@ -325,7 +325,8 @@ export default function NormalMode({ onBack }) {
     pi, // 樹莓派連線（狀態顯示 / 連線按鈕用）
     vitals, // 統一生理量測（毫米波 hr/rr/fi，不管走樹莓派專線或單車 TX）
   } = useBle(); // 共用 App 層那條連線（連線在主畫面做，這裡只讀資料）
-  const imuMq = useImuMqtt(); // 進入一般模式就連 MQTT 讀 IMU，離開自動斷線
+  // const imuMq = useImuMqtt(); // 進入一般模式就連 MQTT 讀 IMU，離開自動斷線
+  // ↑ demo 前先關閉：MQTT broker 尚未接通，暫時不連、不顯示 IMU 區（見下方註解的 <ImuPanel/>）
   const [confirmExit, setConfirmExit] = useState(false);
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
   const connected = phase === "connected";
@@ -411,13 +412,14 @@ export default function NormalMode({ onBack }) {
         </div>
       )}
 
-      {/* IMU 即時數據（MQTT）：獨立於藍牙連線，放在頁面最底下 */}
+      {/* IMU 即時數據（MQTT）：demo 前暫時註解，等 MQTT broker 接通再解開
       <ImuPanel
         status={imuMq.status}
         imu={imuMq.imu}
         lastAt={imuMq.lastAt}
         assistLevel={view.assistLevel}
       />
+      */}
 
       {confirmExit && (
         <div className="hr-modal-backdrop" onClick={() => setConfirmExit(false)}>
