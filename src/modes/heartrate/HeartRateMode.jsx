@@ -305,22 +305,27 @@ export default function HeartRateMode({ onBack }) {
   // 引擎優先吃真實 hr/rr/fi（非 demo 且有值時）；沒有就依 realOnly 決定等待或模擬
   const { live } = useHeartRateEngine(base, demoBand, vitals, realOnly);
 
-  // 心肺模式自動控制輔助力：把引擎決策出的段位，用真車控制指令送出。
+  // ⛔ 心肺模式自動控制輔助力：暫時停用（整段註解，不對真車送任何 ASSIST 指令）。
+  // 停用原因：這段只檢查 isDemo/phase/canControl，沒檢查 live.real——
+  // 毫米波沒接上時引擎會退回「模擬心率曲線」，等於用假資料反覆改真車段位。
+  // 要重新啟用：把下面整段解開，並在條件加上 `!live?.real` 就 return（只有真實
+  // 生理資料才允許控車）。畫面上的段數條不受影響，照常顯示引擎決策結果。
+  //
   //   指令＝ "ASSIST,<0-5>"（走 ble.setAssist → 韌體 control_set_assist_level，收 0~5），
   //   與 BLE/ble_phone.html 的助力按鈕同一條路徑。段位 6（無輔助）對應 0（off）。
   // 只在「連到真車、可控制、非模擬」且段位有變動時才送，避免每 0.5 秒洗爆 BLE。
-  const lastAssistRef = useRef(null);
-  useEffect(() => {
-    if (isDemo || phase !== "connected" || !canControl) {
-      lastAssistRef.current = null; // 斷線/模擬：清掉，之後重連第一筒仍會送
-      return;
-    }
-    if (live?.gear == null) return;
-    const level = live.gear === 6 ? 0 : clamp(live.gear, 0, 5);
-    if (level === lastAssistRef.current) return;
-    lastAssistRef.current = level;
-    setAssist(level);
-  }, [live?.gear, isDemo, phase, canControl, setAssist]);
+  // const lastAssistRef = useRef(null);
+  // useEffect(() => {
+  //   if (isDemo || phase !== "connected" || !canControl) {
+  //     lastAssistRef.current = null; // 斷線/模擬：清掉，之後重連第一筒仍會送
+  //     return;
+  //   }
+  //   if (live?.gear == null) return;
+  //   const level = live.gear === 6 ? 0 : clamp(live.gear, 0, 5);
+  //   if (level === lastAssistRef.current) return;
+  //   lastAssistRef.current = level;
+  //   setAssist(level);
+  // }, [live?.gear, isDemo, phase, canControl, setAssist]);
 
   // 選 demo 強度：沒設基準線時先套預設值，再套用選到的強度（同時關掉「只用真實」）
   const pickDemo = (band) => {
