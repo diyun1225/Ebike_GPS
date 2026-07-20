@@ -2535,6 +2535,71 @@ button:disabled {
   font-weight: 600;
 }
 
+/* ── 智慧輔助模式：模型推論檔位（主角）＋車況儀表 ── */
+.am-dash {
+  gap: 16px;
+}
+.am-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 18px 18px;
+  border-radius: 20px;
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--ac) 16%, #ffffff) 0%,
+    #ffffff 62%
+  );
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
+  border: 1px solid color-mix(in srgb, var(--ac) 22%, #eef1ef);
+}
+.am-hero-cap {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #7d8a82;
+}
+.am-hero-word {
+  font-size: 52px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -1px;
+  color: var(--ac);
+  font-variant-numeric: tabular-nums;
+}
+.am-hero-level {
+  font-size: 14px;
+  font-weight: 800;
+  color: #3a4a41;
+}
+.am-hero-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  height: 56px;
+  margin: 8px 0 2px;
+}
+.am-hero-seg {
+  width: 30px;
+  border-radius: 7px 7px 4px 4px;
+  background: #e7ece8;
+  transition: background 0.35s ease, height 0.35s ease;
+}
+.am-hero-sub {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #94a29a;
+  letter-spacing: 0.5px;
+}
+.am-speedwrap {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 4px;
+}
+
 /* 數據卡格（踏頻 / 扭力 / 馬達轉速 / 馬達溫度） */
 .nm-grid {
   display: grid;

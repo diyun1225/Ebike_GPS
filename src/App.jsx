@@ -3,6 +3,7 @@ import HomeScreen from "./HomeScreen.jsx";
 import NormalMode from "./modes/normal/NormalMode.jsx";
 import NavigationMode from "./modes/navigation/NavigationMode.jsx";
 import HeartRateMode from "./modes/heartrate/HeartRateMode.jsx";
+import AssistMode from "./modes/assist/AssistMode.jsx";
 import { BleProvider, useBle } from "./ble/BleContext.jsx";
 import { modeIdToFrame, MODE_CODE_BY_ID, MODE_LABEL_BY_ID } from "./modeFrame.js";
 import RideControls from "./controls/RideControls.jsx";
@@ -95,8 +96,7 @@ function AppInner() {
   else if (mode === "heartrate") screen = <HeartRateMode onBack={backToHome} />;
   else if (mode === "suspension")
     screen = <ComingSoon title="智慧避震模式" icon="🔧" onBack={backToHome} />;
-  else if (mode === "assist")
-    screen = <ComingSoon title="智慧輔助模式" icon="💪" onBack={backToHome} />;
+  else if (mode === "assist") screen = <AssistMode onBack={backToHome} />;
   else if (mode === "shift")
     screen = <ComingSoon title="智慧變速模式" icon="⚙️" onBack={backToHome} />;
   else screen = <HomeScreen onSelect={requestEnter} pending={pending} />;
