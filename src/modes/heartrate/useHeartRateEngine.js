@@ -154,8 +154,9 @@ export function useHeartRateEngine(base, demoBand = null, sensor = null, realOnl
           s.fatigue = clamp(s.fatigue + (load - 0.35) * 1.2, 0, 100);
 
           // demo 車輛數據：車速/踏頻跟著強度走（低→高越騎越快），電池慢慢掉
-          const spdTarget = 8 + effort * 34; // 低≈18、高≈35 km/h
-          s.speed = clamp(s.speed + (spdTarget - s.speed) * 0.25 + rand(-1, 1), 0, 50);
+          // 車速上限 25 km/h（法規助力斷電速度，demo 不顯示超過）
+          const spdTarget = 8 + effort * 20; // 低≈15、高≈25 km/h
+          s.speed = clamp(s.speed + (spdTarget - s.speed) * 0.25 + rand(-1, 1), 0, 25);
           const cadTarget = 45 + effort * 55; // 低≈65、高≈95 rpm
           s.cadence = clamp(s.cadence + (cadTarget - s.cadence) * 0.3 + rand(-2, 2), 0, 120);
           s.batt = clamp(s.batt - (0.05 + effort * 0.1), 0, 100); // 越用力掉越快
