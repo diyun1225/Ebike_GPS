@@ -349,9 +349,15 @@ export function useBleTelemetry() {
   const shiftUp = useCallback(() => sendCommand("SHIFT,UP"), [sendCommand]);
   const shiftDown = useCallback(() => sendCommand("SHIFT,DOWN"), [sendCommand]);
 
-  // 助力段位 0~5（韌體 control_set_assist_level 收 0~5）
+  // 助力段位 0~5：直接組 ASSISTREQ raw CAN（0x2940015）送出，不走韌體的
+  // "ASSIST,<n>" 字串簡寫，少一層 ESP32 解析。超出 0~5 不送。
   const setAssist = useCallback(
     (level) => {
+      // ⚠️ 一定要送字串 "ASSIST,<0-5>"，交給韌體 control_set_assist_level 組封包。
+      // 曾改成由 App 直接組 raw CAN（CAN,2940015,2,02,0X）想少一層解析，
+      // 但實車測試「騎起來完全沒感覺」= 車沒吃這帳。ble_phone.html 送字串則正常，
+      // 所以以韌體那條路為準，不要再自己組 CAN。
+      if (!Number.isInteger(level) || level < 0 || level > 5) return;
       setCommandedAssist(level); // 這台車不回報段位，用它當畫面回饋
       demoAssistRef.current = level; // 模擬模式下讓 assistLevel 也跟著變
       sendCommand("ASSIST," + level);

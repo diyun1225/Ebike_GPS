@@ -8,7 +8,9 @@
 <body>
   <h3>CCPA 車況(BLE)</h3>
   <button id="connectBtn">連線 單車</button>
-  <button id="connectAiBtn">連線毫米波板</button>
+  <!-- MW 只接受一個 BLE 連線。正常情況由 ESP32 連,手機透過單車那條看轉發過來的 hr/rr。
+       這顆按鈕只在「ESP32 連不上、要直接除錯 MW」時才用 —— 按了會把 ESP32 擠掉。 -->
+  <button id="connectAiBtn" title="會搶走 ESP32 對 MW 的連線,平常不要按">連線毫米波板(除錯用,會擠掉 ESP32)</button>
   <button id="clearBtn">清空</button>
   <p id="status">單車:尚未連線</p>
   <p id="aiStatus">毫米波板:尚未連線</p>
@@ -69,6 +71,19 @@
   <button id="copyBtn" disabled>📋 複製</button>
   <span id="recInfo">未記錄</span>
 
+  <h4>🔧 助力診斷測試區</h4>
+  <p>
+    <button class="diagAssistBtn" data-level="0" disabled>設 0</button>
+    <button class="diagAssistBtn" data-level="1" disabled>設 1</button>
+    <button class="diagAssistBtn" data-level="3" disabled>設 3</button>
+    <button class="diagAssistBtn" data-level="5" disabled>設 5</button>
+    <button id="diagClearBtn">清空診斷</button>
+  </p>
+  <pre id="diag" style="background:#fff6e5;padding:8px;border-left:4px solid #e2892a">(尚未開始)</pre>
+
+  <h4>毫米波(hr / rr / fi)</h4>
+  <pre id="mmw" style="background:#eef6ff;padding:8px;border-left:4px solid #2a7ae2">(尚未收到毫米波資料)</pre>
+
   <h4>解碼後車況</h4>
   <pre id="out">(尚未收到資料)</pre>
 
@@ -102,6 +117,8 @@
 
     // 生理數據(自訂協議 MMWAVE 0x1FA15000):DLC=2,d0=hr d1=rr(0xFF = 無效)
     const MMWAVE_ID = "1FA15000";             // IoT→AI(見 PHONE_IOT_AI_CAN_PROTOCOL.md)
+    const MMWAVE_ACK_ID = 0x1FA15000;         // 同一個 ID,ESP32 轉發回手機時用來認出這包
+    const MMWAVE_FI_ID  = 0x1FA15001;         // 疲憊值另一包:d0-1 = fi×100 uint16 LE(0~100%)
     let commandedRideMode = null;              // 最後一次按的模式(當畫面回饋)
 
     // 電子坐墊 Dropper:網頁只送文字指令,實際 CAN frame(0x2940035:From Who/Sequence/
@@ -175,13 +192,120 @@
     }
     // 把目前 hr/rr/fi 打包成 source:"hr" 一包發出去(欄位名對齊 t.txt schema)。
     function publishVitals() {
-      if (!mqttClient || !mqttClient.connected) return;         // 還沒連上就先不發(等連上後下一包再送)
+      if (!mqttClient || !mqttClient.connected) {
+        vitalsWhyLog("MQTT", "未連上 broker(看上方 MQTT 狀態)");   // 別再靜默,不然無從查起
+        return;
+      }
       const msg = { source: "hr", timestamp_ms: Date.now() };
-      if (vitals.hr != null) msg.heart_rate_bpm = vitals.hr;    // 心率 bpm
-      if (vitals.rr != null) msg.r_rate_bpm     = vitals.rr;    // 呼吸率 bpm
-      if (vitals.fi != null) msg.fatigue_pct    = vitals.fi;    // 疲憊值(百分比;schema 沒有此欄,額外帶,原樣不縮放)
+      if (vitals.hr != null) msg.hr = vitals.hr;                // 心率 bpm
+      if (vitals.rr != null) msg.rr = vitals.rr;                // 呼吸率 brpm
+      if (vitals.fi != null) msg.fi = vitals.fi;                // 疲憊值(原樣不縮放,單位待確認)
       mqttClient.publish(MQTT_STATE_TOPIC, JSON.stringify(msg));
+      vitalsOkLog("MQTT", JSON.stringify(msg));
     }
+
+    // ── 助力診斷測試區 ────────────────────────────────────────────────────
+    // 目的:分辨「指令送不出去」/「有人覆蓋你」/「車子不接受」這三種完全不同的狀況。
+    // 關鍵原理:TWAI 收不到自己送出的框 → ESP32 **收到**的 ASSISTREQ 必定來自別的節點
+    // (車表或 AI 板)。所以「他人 ASSISTREQ」一旦有數字,就是有人在跟你搶控制權。
+    const diag = {
+      sentAt: 0, sentWhat: "", sentOk: null,      // 我送出的指令與結果
+      othAt: 0, othLevel: null, othCount: 0,      // 別人下的 ASSISTREQ
+      twaiAt: 0, twaiText: "",                    // TWAI 匯流排狀態
+      mwAt: 0, mwText: "",                        // 毫米波那條 CAN 有沒有送出去
+      askedAt: 0, askedLevel: null,               // 你按下按鈕的時間/值(用來算反應時間)
+    };
+
+    function diagFeed(line) {
+      let m;
+      if ((m = /^#\s*CMD\s*\[(.+?)\]\s*->\s*(\S+)/.exec(line))) {
+        diag.sentAt = Date.now(); diag.sentWhat = m[1]; diag.sentOk = (m[2] === "sent");
+      } else if ((m = /^#\s*他人下的 ASSISTREQ level=(\d+)/.exec(line))) {
+        diag.othAt = Date.now(); diag.othLevel = parseInt(m[1], 10); diag.othCount++;
+      } else if ((m = /^#\s*TWAI\s+state=(\S+)\s+TEC=(\d+)\s+REC=(\d+)/.exec(line))) {
+        diag.twaiAt = Date.now(); diag.twaiText = `${m[1]}  TEC=${m[2]} REC=${m[3]}`;
+      } else if ((m = /^#\s*\[MW\]\s*(.+)$/.exec(line))) {
+        diag.mwAt = Date.now(); diag.mwText = m[1];
+      }
+      renderDiag();
+    }
+
+    function renderDiag() {
+      const el = document.getElementById("diag");
+      if (!el) return;
+      const ag = (t) => t ? ((Date.now() - t) / 1000).toFixed(1) + "s 前" : "—";
+
+      // 判讀:按下之後才出現的「他人 ASSISTREQ」而且值跟你要的不同 = 被覆蓋
+      let verdict = "按上面的按鈕開始測試";
+      if (diag.askedAt) {
+        const overrode = diag.othAt > diag.askedAt && diag.othLevel !== diag.askedLevel;
+        if (diag.sentOk === false)
+          verdict = "❌ 指令送不出去(CAN 沒送成功)→ 匯流排問題,不是車子不理你";
+        else if (overrode)
+          verdict = `❌ 被覆蓋!你設 ${diag.askedLevel},但有其他節點下了 level=${diag.othLevel}`
+                  + `(車表或 AI 板在搶控制權)`;
+        else if (diag.sentOk === true)
+          verdict = `✅ 指令已送出(sent)且沒偵測到他人覆蓋`
+                  + ` → 若助力仍沒變,問題在車端控制器本身`;
+      }
+
+      el.textContent =
+        `判讀:${verdict}\n` +
+        `────────────────────────────────\n` +
+        `你按下的        : ${diag.askedLevel ?? "—"}   ${ag(diag.askedAt)}\n` +
+        `① 指令送出      : ${diag.sentWhat || "—"}  → ` +
+          `${diag.sentOk === null ? "—" : diag.sentOk ? "sent ✅" : "FAILED ❌"}   ${ag(diag.sentAt)}\n` +
+        `② 他人 ASSISTREQ: ${diag.othCount ? `level=${diag.othLevel}(共 ${diag.othCount} 次)` : "沒有 ✅"}   ${ag(diag.othAt)}\n` +
+        `③ TWAI 狀態     : ${diag.twaiText || "(還沒回報)"}   ${ag(diag.twaiAt)}\n` +
+        `④ 毫米波 CAN    : ${diag.mwText || "(還沒回報)"}   ${ag(diag.mwAt)}\n`;
+    }
+    setInterval(renderDiag, 500);
+
+    // ── 毫米波專屬面板 ────────────────────────────────────────────────────
+    // 診斷 log 會被車況封包洗掉,所以 hr/rr 的三條路徑(BLE 進來 / 轉 CAN / 發 MQTT)
+    // 各自把「最後一次成功」和「目前為何失敗」記在這裡,原地更新、不追加,不會刷掉。
+    const mmw = {
+      rxAt: 0, rxCount: 0, rxLast: "", notifyCount: 0,  // ① BLE 收到毫米波 JSON
+      canAt: 0, canLast: "", canWhy: "",   // ② 轉成 CAN 送給 ESP32
+      mqttAt: 0, mqttLast: "", mqttWhy: "" // ③ 發到 MQTT
+    };
+    // 記「成功」時一併清掉失敗原因,反之亦然 —— 免得畫面同時顯示成功和錯誤,自相矛盾。
+    function mmwOk(tag, what) {
+      const now = Date.now();
+      if (tag === "CAN")  { mmw.canAt = now;  mmw.canLast = what;  mmw.canWhy = ""; }
+      else                { mmw.mqttAt = now; mmw.mqttLast = what; mmw.mqttWhy = ""; }
+      renderMmw();
+    }
+    function mmwWhy(tag, why) {
+      if (tag === "CAN") mmw.canWhy = why; else mmw.mqttWhy = why;
+      renderMmw();
+    }
+    // 這兩個給舊呼叫點沿用,同時寫進面板
+    const vitalsOkLog  = (tag, what) => mmwOk(tag, what);
+    const vitalsWhyLog = (tag, why)  => mmwWhy(tag, why);
+
+    const ago = (t) => t ? ((Date.now() - t) / 1000).toFixed(1) + " 秒前" : "從未";
+    // 超過 5 秒沒更新就標記為停滯 —— 靜止的數字看起來跟即時的一樣,不標會誤判成正常。
+    const fresh = (t) => !t ? "❌" : (Date.now() - t < 5000 ? "✅" : "⚠️ 停滯");
+
+    function renderMmw() {
+      const el = document.getElementById("mmw");
+      if (!el) return;
+      const line = (icon, name, detail) => `${icon} ${name}\n     ${detail}\n`;
+      el.textContent =
+        `hr ${vitals.hr ?? "--"} bpm    rr ${vitals.rr ?? "--"} brpm    fi ${vitals.fi ?? "--"}\n` +
+        `────────────────────────────────\n` +
+        line(fresh(mmw.rxAt), `① 毫米波板 BLE(notify ${mmw.notifyCount} 次 → 解出 ${mmw.rxCount} 包)`,
+             mmw.rxAt ? `${ago(mmw.rxAt)}  ${mmw.rxLast}`
+                      : (mmw.notifyCount ? "有 notify 但解不出 JSON → 看 log 的 ⑦[AI] 原始內容"
+                                         : "完全沒收到 → 毫米波板未連線,或它沒在送")) +
+        line(mmw.canWhy ? "❌" : fresh(mmw.canAt), "② 轉 CAN 0x1FA15000",
+             mmw.canWhy || (mmw.canAt ? `${ago(mmw.canAt)}  ${mmw.canLast}` : "還沒送過")) +
+        line(mmw.mqttWhy ? "❌" : fresh(mmw.mqttAt), "③ 發 MQTT source:\"hr\"",
+             mmw.mqttWhy || (mmw.mqttAt ? `${ago(mmw.mqttAt)}  ${mmw.mqttLast}` : "還沒發過"));
+    }
+    // 定時重繪:讓「幾秒前」和停滯標記會自己跳動,不用等下一包資料才更新
+    setInterval(renderMmw, 500);
 
     // ── AI 板生理量測(心率 HR / 呼吸率 RR / FI)────────────────────────
     // 走同一個 TX 特徵(UUID 相同),但送的是純 JSON 一行(不是 ID= 的 CAN 封包),例:
@@ -199,10 +323,15 @@
       if (hr !== undefined) vitals.hr = hr;
       if (rr !== undefined) vitals.rr = rr;
       if (fi !== undefined) vitals.fi = fi;
-      // 收到生理資料 → 連上 MQTT(第一次)並打包發到 vehicle/state(source:"hr")
+      mmw.rxAt = Date.now(); mmw.rxCount++; mmw.rxLast = JSON.stringify(obj);   // ① 收到了
+      // ⚠ 這裡只在「手機自己連 MW 除錯」時才會走到。正式架構是
+      //   MW ──BLE──▶ ESP32 ──┬──▶ CAN 0x1FA15000
+      //                        ├──▶ MQTT source:"can"(含 hr/rr/fi)
+      //                        └──▶ BLE 轉發給手機顯示
+      //   所以 MQTT 發佈與 CAN 轉發都由 ESP32 負責,手機不再重複做,否則雲端會收到兩份。
       mqttEnsure();
       publishVitals();
-      sendMmwaveCan();                       // 同一份 hr/rr 再轉一包 CAN 給 AI 板
+      sendMmwaveCan();                       // 除錯路徑:手機直連 MW 時才需要自己轉發
     }
 
     // ── hr/rr 轉發到 CAN(MMWAVE 0x1FA15000, DLC=2)────────────────────
@@ -212,9 +341,14 @@
     const MMWAVE_RESEND_MS = 1000;           // 節流:最多每秒一包(對齊協定文件的「定期發送」)
     let mmwaveLastSentMs = 0;
     function sendMmwaveCan() {
-      if (!rxChar) return;                   // 沒連線就靜靜跳過(不要洗 log)
+      // ⚠ rxChar 是「單車」那條 BLE 的寫入特徵。毫米波資料可能是從 AI 板(第二條 BLE)來的,
+      //   但要轉成 CAN 一定得經過單車這條 → 只連 AI 板、沒連單車時就送不出去。
+      if (!rxChar) {
+        vitalsWhyLog("CAN", "單車 BLE 未連線(要轉 CAN 必須連上單車,只連 AI 板不夠)");
+        return;
+      }
       const now = Date.now();
-      if (now - mmwaveLastSentMs < MMWAVE_RESEND_MS) return;
+      if (now - mmwaveLastSentMs < MMWAVE_RESEND_MS) return;   // 節流,不是錯誤,不用 log
       mmwaveLastSentMs = now;
       // null → 0xFF(無效值);有值則夾在 0~254,免得真實值 255 被誤讀成 null
       const b = (v) => hex2(v == null ? 0xFF : Math.min(254, Math.max(0, Math.round(v))));
@@ -262,7 +396,7 @@
         if (!line) continue;
 
         // 韌體狀態訊息(# 開頭,例:# CMD ... -> sent)→ 當訊息看,不當封包解析
-        if (line.startsWith("#")) { log("ℹ " + line); continue; }
+        if (line.startsWith("#")) { log("ℹ " + line); diagFeed(line); continue; }
 
         // AI 板生理量測是純 JSON 一行({ 開頭),不是 ID= 的 CAN 封包 → 解 JSON 取 HR/RR/FI
         if (line.startsWith("{")) {
@@ -306,6 +440,26 @@
           continue;   // 不是 CCPA 車況,不用進解碼器
         }
 
+        // 毫米波生理數據(0x1FA15000 d0=hr d1=rr,0xFF=無效)。
+        // 這是 ESP32 直連 MW 後轉發給手機的 —— MW 只接受一個 BLE 連線,已被 ESP32 佔用,
+        // 手機不再自己連 MW。這條路進來的不用再送回 CAN(ESP32 已經送過了)。
+        if (f.id === MMWAVE_ACK_ID) {
+          vitals.hr = f.data[0] === 0xFF ? null : f.data[0];
+          vitals.rr = f.data[1] === 0xFF ? null : f.data[1];
+          mmw.rxAt = Date.now(); mmw.rxCount++; mmw.rxLast = `(經 ESP32)hr=${vitals.hr ?? "--"} rr=${vitals.rr ?? "--"}`;
+          mmwOk("CAN", `由 ESP32 直連 MW 送出,手機不需轉發`);
+          show();
+          continue;   // 不是 CCPA 車況,不用進解碼器
+        }
+
+        // 毫米波疲憊值(0x1FA15001,d0-1 = fi×100 uint16 LE,0xFFFF=無效)
+        if (f.id === MMWAVE_FI_ID && f.dlc >= 2) {
+          const v = f.data[0] | (f.data[1] << 8);       // LE
+          vitals.fi = v === 0xFFFF ? null : v / 100;
+          show();
+          continue;
+        }
+
         // 自訂協議:騎乘模式 ACK。實機 = 0x1FA13001 DATA= A5 <模式碼>;
         // 文件版 = 0x1FA23000 DATA= AA <回音> <實際生效>。兩種都認。
         const ackReal = (f.id === RIDE_MODE_ACK_ID     && f.data[0] === RIDE_MODE_ACK_MAGIC);
@@ -326,25 +480,55 @@
     // 用獨立的行緩衝 bufAi,跟單車的 buf 分開,兩台的碎片才不會互相污染。
     let bufAi = "";
     let aiNotifyCount = 0;
+    const AI_BUF_MAX = 4096;   // 緩衝上限:收到雜訊時不讓它無限膨脹
+
+    // ⚠ 毫米波送的是 {"hr":72,"rr":16,"fi":0.83},**結尾沒有換行**。
+    //   舊版靠 indexOf("\n") 切行 → 永遠切不出來,資料全積在緩衝裡,一包都解不出。
+    //   改用大括號配對抽完整物件:數 { } 深度,歸零就是一個完整 JSON。
+    //   字串內的大括號要跳過(含跳脫字元),否則 {"a":"}"} 會被誤判提早結束。
+    //   沒收完的半包留在緩衝等下一段 notify 拼回來(BLE MTU 會把一包切成兩段)。
+    function extractJsonObjects(s) {
+      const objs = [];
+      let depth = 0, start = -1, inStr = false, esc = false;
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === "\\") esc = true;
+          else if (c === '"') inStr = false;
+          continue;
+        }
+        if (c === '"') { inStr = true; continue; }
+        if (c === "{") { if (depth === 0) start = i; depth++; }
+        else if (c === "}" && depth > 0) {
+          if (--depth === 0 && start >= 0) { objs.push(s.slice(start, i + 1)); start = -1; }
+        }
+      }
+      // 還沒收完的半包(depth>0)留著;沒有半包就整段丟掉,免得雜訊一直卡在緩衝
+      return { objs, rest: (depth > 0 && start >= 0) ? s.slice(start) : "" };
+    }
+
     function onNotifyAi(e) {
       const text = td.decode(e.target.value);
       aiNotifyCount++;
+      mmw.notifyCount = aiNotifyCount;          // 面板要能分辨「沒收到」vs「收到但解不出」
       log(`⑦[AI] 收到 BLE #${aiNotifyCount}(${e.target.value.byteLength} bytes): ${JSON.stringify(text)}`);
       bufAi += text;
-      let i;
-      while ((i = bufAi.indexOf("\n")) >= 0) {
-        const line = bufAi.slice(0, i).trim();
-        bufAi = bufAi.slice(i + 1);
-        if (!line) continue;
-        if (line.startsWith("{")) {
-          try {
-            const obj = JSON.parse(line);
-            updateVitals(obj);
-            log("♥ 生理量測(AI板):" + JSON.stringify(obj));
-            show();
-          } catch (e2) {
-            // 不是完整 JSON(被 BLE 切斷)→ 留著等下一段拼回來
-          }
+      if (bufAi.length > AI_BUF_MAX) {          // 爆掉代表對方送的不是我們認得的格式
+        log(`⚠[AI] 緩衝超過 ${AI_BUF_MAX} bytes 仍拼不出完整 JSON,已清空`);
+        bufAi = "";
+        return;
+      }
+      const { objs, rest } = extractJsonObjects(bufAi);
+      bufAi = rest;
+      for (const raw of objs) {
+        try {
+          const obj = JSON.parse(raw);
+          updateVitals(obj);
+          log("♥ 生理量測(AI板):" + JSON.stringify(obj));
+          show();
+        } catch (e2) {
+          log("⚠[AI] 大括號配對成功但 JSON 解析失敗:" + raw);
         }
       }
     }

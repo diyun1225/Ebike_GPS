@@ -271,8 +271,8 @@ export default function HeartRateMode({ onBack }) {
   const { live } = useHeartRateEngine(base, demoBand, vitals, realOnly);
 
   // 心肺模式自動控制輔助力：把引擎決策出的段位，用真車控制指令送出。
-  //   指令＝ "ASSIST,<0-5>"（走 ble.setAssist → 韌體 control_set_assist_level，收 0~5），
-  //   與 BLE/ble_phone.html 的助力按鈕同一路徑；段位 6（無輔助）對應 0（off）。
+  //   指令＝ "ASSIST,<0-5>"（走 ble.setAssist → 韌體 control_set_assist_level 組封包，
+  //   收 0~5）；段位 6（無輔助）對應 0（off）。
   //
   // ⚠️ 只有 live.real（引擎正在吃毫米波實測 hr/rr）才准控車。毫米波沒接上時引擎會
   //    退回模擬心率曲線，若照送就是拿假資料反覆改真車段位——所以 !live.real 直接擋掉。
