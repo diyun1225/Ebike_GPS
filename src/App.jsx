@@ -5,14 +5,15 @@ import NavigationMode from "./modes/navigation/NavigationMode.jsx";
 import HeartRateMode from "./modes/heartrate/HeartRateMode.jsx";
 import AssistMode from "./modes/assist/AssistMode.jsx";
 import { BleProvider, useBle } from "./ble/BleContext.jsx";
-import { modeIdToFrame, MODE_CODE_BY_ID, MODE_LABEL_BY_ID } from "./modeFrame.js";
+import { modeIdToFrame, MODE_LABEL_BY_ID } from "./modeFrame.js";
 import RideControls from "./controls/RideControls.jsx";
 
-// 等運算板回 MODEACK 的逾時（ms）。板子回應較慢，給久一點避免誤判逾時。
-const MODEACK_TIMEOUT_MS = 8000;
-
 // 整個 App 的最上層：用 BleProvider 讓全 App 共用「一條」與運算板的 BLE 連線，
-// 再在 AppInner 處理「選模式 → 確認 → 送 MODEREQ → 等板子 ACK → 進入」的流程。
+// 再在 AppInner 處理「選模式 → 確認 → 送 MODEREQ → 進入」的流程。
+//
+// 註：這裡「不等」板子回 ACK。AI 板切模式時要載入模型，回覆可能慢到十幾秒，
+//     等 ACK 會讓使用者一直卡在「連接失敗」的假錯誤（實際上模式有切成功）。
+//     ACK 仍然有收、有解析，只是改成寫進診斷 Log 供對照，不擋畫面。
 export default function App() {
   return (
     <BleProvider>
@@ -25,8 +26,6 @@ function AppInner() {
   const ble = useBle();
   const [mode, setMode] = useState(null); // null = 主畫面
   const [pending, setPending] = useState(null); // 待確認進入的 modeId（顯示確認視窗）
-  // 送封包 / 等 ACK 的即時狀態
-  const [flow, setFlow] = useState({ busy: false, msg: "", error: false });
 
   // 偵測「頁面被重新載入」：sessionStorage 在同一分頁的 reload 之間會保留。
   // 掛載時旗標已存在 → 這不是第一次開啟，是頁面被重載了（dev 熱更新 / iOS 記憶體不足
@@ -40,56 +39,26 @@ function AppInner() {
   const backToHome = () => setMode(null);
 
   // 主畫面點模式 → 先跳確認視窗，還不進入
-  const requestEnter = (modeId) => {
-    setFlow({ busy: false, msg: "", error: false });
-    setPending(modeId);
-  };
-  const cancelEnter = () => {
-    if (flow.busy) return; // 傳送中不讓關
-    setPending(null);
-  };
+  const requestEnter = (modeId) => setPending(modeId);
+  const cancelEnter = () => setPending(null);
   const enterNow = (modeId) => {
     setPending(null);
-    setFlow({ busy: false, msg: "", error: false });
     setMode(modeId);
   };
 
-  // 按「確定」：連線中就送 MODEREQ 並等 ACK；沒連線就直接進入（不通知板子）
-  const confirmEnter = async () => {
+  // 按「確定」：連線中就送 MODEREQ 通知板子，然後「立刻」進入，不等 ACK。
+  // （板子載入模型可能要十幾秒才回 ACK，等它會變成假的「連接失敗」。）
+  const confirmEnter = () => {
     const modeId = pending;
     const frame = modeIdToFrame(modeId);
-    const code = MODE_CODE_BY_ID[modeId];
     const canSend = ble.phase === "connected" && ble.canControl && frame;
 
-    if (!canSend) {
-      enterNow(modeId); // 沒連線 / 無法送 → 直接進入
-      return;
+    if (canSend) {
+      // 不 await：BLE 寫入本身很快，但萬一卡住也不該擋住進入模式。
+      // sendCommand 內部已經 try/catch，這裡再兜一層保險。
+      Promise.resolve(ble.sendCommand(frame.tx)).catch(() => {});
     }
-
-    try {
-      setFlow({ busy: true, msg: "傳送模式指令給運算板…", error: false });
-      // 先掛好等待再送指令：板子回得很快時，ACK 可能在 waitForModeAck 註冊完成
-      // 之前就到了，那樣會白等到逾時。先 arm 再送就沒有這個空窗。
-      const ackPromise = ble.waitForModeAck(code, MODEACK_TIMEOUT_MS);
-      await ble.sendCommand(frame.tx);
-      setFlow({ busy: true, msg: "等待運算板確認（ACK）…", error: false });
-      const ok = await ackPromise;
-      if (ok) {
-        enterNow(modeId); // 收到 ACK → 進入
-      } else {
-        setFlow({
-          busy: false,
-          msg: "未收到運算板確認，可重試或直接進入。",
-          error: true,
-        });
-      }
-    } catch (e) {
-      setFlow({
-        busy: false,
-        msg: "送出失敗：" + (e?.message || e),
-        error: true,
-      });
-    }
+    enterNow(modeId);
   };
 
   // 目前畫面
@@ -121,27 +90,21 @@ function AppInner() {
       {pending && (
         <EnterModal
           modeId={pending}
-          flow={flow}
           connected={ble.phase === "connected" && ble.canControl}
           onConfirm={confirmEnter}
           onCancel={cancelEnter}
-          onEnterAnyway={() => enterNow(pending)}
         />
       )}
     </div>
   );
 }
 
-// 進入模式的確認視窗：確定 → 送封包 / 等 ACK；逾時可重試或直接進入
-function EnterModal({ modeId, flow, connected, onConfirm, onCancel, onEnterAnyway }) {
+// 進入模式的確認視窗：按確定就送封包並立刻進入（不等板子 ACK，見上方說明）
+function EnterModal({ modeId, connected, onConfirm, onCancel }) {
   const label = MODE_LABEL_BY_ID[modeId] || "此模式";
-  const showRecover = flow.error && !flow.busy; // 逾時/失敗 → 顯示重試/直接進入
 
   return (
-    <div
-      className="enter-modal-backdrop"
-      onClick={flow.busy ? undefined : onCancel}
-    >
+    <div className="enter-modal-backdrop" onClick={onCancel}>
       <div className="enter-modal" onClick={(e) => e.stopPropagation()}>
         <div className="enter-modal-icon">🚴</div>
         <h3>
@@ -149,48 +112,17 @@ function EnterModal({ modeId, flow, connected, onConfirm, onCancel, onEnterAnywa
         </h3>
         <p className="enter-modal-sub">
           {connected
-            ? "進入後會通知運算板切換模式，並等待板子確認。"
+            ? "進入後會通知運算板切換模式。"
             : "尚未連線藍牙，將直接進入（不會通知運算板）。"}
         </p>
 
-        {flow.msg && (
-          <div className={`enter-modal-status ${flow.error ? "err" : ""}`}>
-            {flow.busy && <span className="enter-spin" aria-hidden="true" />}
-            <span>{flow.msg}</span>
-          </div>
-        )}
-
         <div className="enter-modal-actions">
-          {showRecover ? (
-            <>
-              <button className="enter-btn cancel" onClick={onCancel}>
-                取消
-              </button>
-              <button className="enter-btn ghost" onClick={onEnterAnyway}>
-                直接進入
-              </button>
-              <button className="enter-btn ok" onClick={onConfirm}>
-                重試
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                className="enter-btn cancel"
-                onClick={onCancel}
-                disabled={flow.busy}
-              >
-                取消
-              </button>
-              <button
-                className="enter-btn ok"
-                onClick={onConfirm}
-                disabled={flow.busy}
-              >
-                {flow.busy ? "處理中…" : "確定"}
-              </button>
-            </>
-          )}
+          <button className="enter-btn cancel" onClick={onCancel}>
+            取消
+          </button>
+          <button className="enter-btn ok" onClick={onConfirm}>
+            確定
+          </button>
         </div>
       </div>
     </div>
