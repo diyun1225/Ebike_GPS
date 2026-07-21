@@ -323,8 +323,15 @@ export function useBleTelemetry() {
 
   // 送一行控制指令；失敗只記到診斷 log，不中斷連線
   const sendCommand = useCallback(async (cmd) => {
+    // 沒有連線物件時 ?. 會靜默什麼都不做 → 完全查不出「到底有沒有送」。改成明確記一筆。
+    if (!connRef.current) {
+      const buf = logBufRef.current;
+      buf.unshift(`[${nowStr()}] ✗ 未連線，指令沒送出：${cmd}`);
+      dirtyRef.current = true;
+      return;
+    }
     try {
-      await connRef.current?.sendCommand(cmd);
+      await connRef.current.sendCommand(cmd);
     } catch (e) {
       const buf = logBufRef.current;
       buf.unshift(`[${nowStr()}] ✗ 送指令失敗：${e?.message || e}`);
