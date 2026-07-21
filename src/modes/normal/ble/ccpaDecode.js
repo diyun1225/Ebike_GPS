@@ -115,13 +115,16 @@ export class CcpaDecoder {
           const tq = u16le(d, 2);
           if (tq !== 0xffff && tq !== 0x0000) { s.riderTorqueNm = tq * 0.01; s.riderTorqueValid = true; s.riderTorqueSource = SRC.GENERAL; }
           else { s.riderTorqueValid = false; s.riderTorqueSource = SRC.NONE; }
-          // 助力等級在 byte5 的 bit2~5（0~5 有效，6=NULL）。這包定時廣播，所以這裡讀得到。
-          const lvl = (d[5] >> 2) & 0x0f;
-          if (lvl <= 5) { s.assistLevel = lvl; s.assistLevelValid = true; }
-          else { s.assistLevelValid = false; }
+          // ⚠️ 這裡「不」解助力段位。
+          // 這台車不回報當下段位，GENERAL_INFO00 byte5 的助力欄不可靠；它又是定時廣播，
+          // 會把使用者剛設的值一直沖掉（設 3 之後畫面被拉回舊值 → 看起來像改不動）。
+          // 段位一律以「最後送出的指令」為準，只由 ASSISTREQ(0x2940015) 更新（見下面 case）。
         }
         break;
 
+      // 助力段位的「唯一」來源：ASSISTREQ 指令封包（不論是手機送的還是 AI 板送的，
+      // 都會出現在 bus 上）。這台車沒有定時廣播當下段位，所以畫面顯示的就是
+      // 「最後一次送出的指令」——看到它變，代表指令確實上了 CAN。
       case ID.ASSISTREQ:
         if (dlc >= 2) {
           const l = d[1] & 0x0f;
