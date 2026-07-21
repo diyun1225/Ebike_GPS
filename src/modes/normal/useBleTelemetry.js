@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ccpaBleConnect } from "./ble/ccpaBle.js";
-import { parseModeAck } from "../../modeFrame.js";
+import { parseModeAck, parseModeState } from "../../modeFrame.js";
 
 /*
  * useBleTelemetry — 把 Web Bluetooth 連線包成 React hook。
@@ -50,6 +50,7 @@ export function useBleTelemetry() {
   const [isDemo, setIsDemo] = useState(false); // 是否在跑「模擬資料」（沒真車時預覽畫面用）
   const [assistAck, setAssistAck] = useState(null); // 最後一次助力 ACK { code, ok }
   const [vitals, setVitals] = useState({ hr: null, rr: null, fi: null }); // 毫米波生理量測（走單車 TX 的 JSON 行）
+  const [modeState, setModeState] = useState(null); // AI 板廣播的「目前生效模式」(1~3)，沒收到為 null
 
   const connRef = useRef(null);
   const ackWaitersRef = useRef([]); // 等待 MODEACK 的 promise resolver 清單
@@ -160,17 +161,41 @@ export function useBleTelemetry() {
             return;
           }
 
-          // 收到 MODEACK → 喚醒對應的等待者（模式碼相符，或不指定碼的都算）
+          // 喚醒符合條件的模式等待者（pred 決定哪些等待者算數）
+          const settle = (pred, ok) => {
+            ackWaitersRef.current = ackWaitersRef.current.filter((w) => {
+              if (!pred(w)) return true;
+              clearTimeout(w.timer);
+              w.resolve(ok);
+              return false; // 移除已喚醒的
+            });
+          };
+
+          // ① 模式狀態廣播 0x1FA23001：AI 板每秒回報「目前生效模式」。
+          //    廣播已經是目標模式 → 直接視為切換成功。這反映板子的實際狀態，
+          //    比「板子說它收到了」更有保證，所以擺在 ACK 前面判。
+          const st = parseModeState(f);
+          if (st) {
+            if (st.mode > 0) {
+              setModeState(st.mode); // 同值 React 會自行跳過重繪，1Hz 不影響效能
+              settle((w) => w.code === st.mode, true);
+            }
+            return;
+          }
+
+          // ② 模式切換 ACK 0x1FA13001：對「這次 SET_MODE」的回覆（0xA5 + 模式碼）。
           const ack = parseModeAck(f);
           if (!ack) return;
-          ackWaitersRef.current = ackWaitersRef.current.filter((w) => {
-            if (w.code == null || w.code === ack.code) {
-              clearTimeout(w.timer);
-              w.resolve(ack.ok);
-              return false; // 移除已喚醒的
-            }
-            return true;
-          });
+          logBufRef.current.unshift(
+            `[${nowStr()}] ${ack.ok ? "✓" : "✗"} 模式 ACK ok=${ack.ok} 回音=${
+              ack.echo < 0 ? "(無 byte1)" : ack.echo
+            }`
+          );
+          if (logBufRef.current.length > MAX_LOG) logBufRef.current.length = MAX_LOG;
+          dirtyRef.current = true;
+          // 回音相符最理想；板子沒帶 byte1（DLC=1）時也接受——
+          // 0x1FA13001 這個 ID 只有模式 ACK 在用，且同時間只會有一個等待者。
+          settle((w) => w.code == null || ack.echo === w.code || ack.echo < 0, ack.ok);
         },
       });
       connRef.current = conn;
@@ -206,6 +231,7 @@ export function useBleTelemetry() {
     setData(null);
     vitalsRef.current = { hr: null, rr: null, fi: null }; // 清空生理量測
     setVitals({ hr: null, rr: null, fi: null });
+    setModeState(null); // 清空板子模式，斷線後不沿用舊狀態
     // 斷線時把還在等 ACK 的都收掉（當作沒收到），避免懸而未決
     ackWaitersRef.current.forEach((w) => {
       clearTimeout(w.timer);
@@ -358,6 +384,7 @@ export function useBleTelemetry() {
     systemOff,
     assistAck,
     vitals,
+    modeState, // AI 板廣播的目前生效模式（1~3；沒收到為 null）
     isDemo,
     startDemo,
     stopDemo,

@@ -23,6 +23,9 @@
 電池溫度 4,batteryTempsC[3],0x1E942458,0x1E94245A,BAT1_INFO06,data[3],u8,− 64,°C,,offset 編碼
 後檔位(目前),rearGear.index,0x650,,Derailleur State,data[0],u8,直接,檔,,GearIndex
 後檔位(最大),rearGear.max,0x650,,Derailleur State,data[4],u8,直接,檔,,GearRange
+騎乘模式 ACK,—,0x1FA13001,,MODE_ACK,data[0],u8,固定 0xA5,,非 0xA5,收到 SET_MODE(0x1FA13000) 後回一次;DLC=2;格式為 0xA5+模式碼
+騎乘模式切換回音,—,0x1FA13001,,MODE_ACK,data[1],u8,直接,模式碼,,本次請求的 ModeCode 回音(1=一般 2=電量管理 3=智慧輔助);例 A501 / A502 / A503
+目前生效模式,modeState,,0x1FA23001,MODE_STATE,data[0],u8,直接,模式碼,非 1~3,【提案中·韌體尚未實作】每秒廣播;不在 dec.snapshot() 內(由 useBleTelemetry 另存)
 ,,,,,,,,,,
 解碼後 payload 範例(dec.snapshot()),,,,,,,,,,
 "payload = { speedKph: 25, cadenceRpm: 80, torqueNm: 15, motorRpm: 1200, motorTempC: 40, assistLevel: 3, batterySocPct: 80, batteryVoltageMv: 48000, batteryCurrentMa: 5000, batteryTempsC: [25,26,27,28], rearGear: { index: 4, max: 11 } }",,,,,,,,,,

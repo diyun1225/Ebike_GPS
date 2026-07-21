@@ -67,30 +67,49 @@ export const MODE_LABEL_BY_ID = {
   heartrate: "心肺模式",
 };
 
-// ── MODEACK：AI 板的回覆 + 每秒廣播（AI→IoT）────────────────────
-//   ID  = 0x1FA23000（延伸 29-bit）
-//   DATA[0] = 狀態：0xAA 成功 / 0xEE 失敗
-//   DATA[1] = 回音（板子收到的模式碼）
-//   DATA[2] = 實際生效模式
-// 註：這個 ID 每秒都會廣播，所以收到它不一定是「剛切換的回覆」，
-//     App 層用 code(回音) 去比對是不是自己等的那次切換。
-export const MODEACK_ID = 0x1fa23000;
+// ── MODE_ACK：AI 板對「這次 SET_MODE」的回覆（AI→IoT）──────────────
+//   ID  = 0x1FA13001（＝ SET_MODE 的 ID + 1，延伸 29-bit）、DLC = 2
+//   DATA = 0xA5 + 模式碼   例：A5 01 / A5 02 / A5 03
+//   DATA[0] = 固定 0xA5（收到並執行）
+//   DATA[1] = 回音：本次請求的模式碼（用來比對是哪一次切換）
+//
+// 註：舊規格表寫的是 ID 0x1FA23000、byte0 0xAA，與韌體實作不符——
+//     實際是這裡的 0x1FA13001 / 0xA5。對錯 ID 會導致 ACK 永遠收不到、
+//     每次切模式都逾時（模式其實有切成功）。詳見同目錄 modeFrame.md。
+export const MODEACK_ID = 0x1fa13001;
 
-const ACK_OK = 0xaa;
-const ACK_FAIL = 0xee;
+const ACK_OK = 0xa5;
 
-// 判斷一個已拆好的 frame（{id,dlc,data}）是不是 MODEACK / 模式廣播。
-//   是   → 回 { ok, code, effectiveMode }
-//          ok            : true=成功(0xAA) / false=失敗(0xEE 或其他)
-//          code          : 回音（板子收到的模式碼，用來比對是哪次切換）
-//          effectiveMode : 實際生效模式
+// 判斷一個已拆好的 frame（{id,dlc,data}）是不是 MODE_ACK。
+//   是   → 回 { ok, echo }
+//          ok   : true=收到並執行(0xA5) / false=其他值
+//          echo : 本次請求的模式碼回音；沒帶這個 byte（DLC=1）時為 -1
 //   不是 → 回 null
 export function parseModeAck(frame) {
   if (!frame || frame.id !== MODEACK_ID) return null;
   const d = frame.data || [];
   return {
     ok: d[0] === ACK_OK,
-    code: d.length > 1 ? d[1] : -1,
-    effectiveMode: d.length > 2 ? d[2] : -1,
+    echo: d.length > 1 ? d[1] : -1,
   };
+}
+
+// ── MODE_STATE：AI 板每秒廣播「目前生效模式」（AI→IoT）────────────
+//   ID  = 0x1FA23001（延伸 29-bit）、DLC = 1
+//   DATA[0] = 目前生效模式（1~3）
+//
+// ⚠ 韌體尚未實作，這是提案中的擴充（見 modeFrame.md）。
+//   與 MODE_ACK 分開的用意：ACK 是「回應這次請求」，這個是「純狀態回報」，
+//   可用來確認板子實際狀態、偵測 App 與板子模式不同步。
+//   程式已先接好，韌體加上去就自動生效；沒有也不影響現有流程。
+export const MODESTATE_ID = 0x1fa23001;
+
+// 判斷 frame 是不是 MODE_STATE 廣播。
+//   是   → 回 { mode }（1~3；超出範圍或沒帶 byte 為 -1）
+//   不是 → 回 null
+export function parseModeState(frame) {
+  if (!frame || frame.id !== MODESTATE_ID) return null;
+  const d = frame.data || [];
+  const m = d.length > 0 ? d[0] : -1;
+  return { mode: m >= 1 && m <= 3 ? m : -1 };
 }

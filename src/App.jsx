@@ -68,9 +68,12 @@ function AppInner() {
 
     try {
       setFlow({ busy: true, msg: "傳送模式指令給運算板…", error: false });
+      // 先掛好等待再送指令：板子回得很快時，ACK 可能在 waitForModeAck 註冊完成
+      // 之前就到了，那樣會白等到逾時。先 arm 再送就沒有這個空窗。
+      const ackPromise = ble.waitForModeAck(code, MODEACK_TIMEOUT_MS);
       await ble.sendCommand(frame.tx);
       setFlow({ busy: true, msg: "等待運算板確認（ACK）…", error: false });
-      const ok = await ble.waitForModeAck(code, MODEACK_TIMEOUT_MS);
+      const ok = await ackPromise;
       if (ok) {
         enterNow(modeId); // 收到 ACK → 進入
       } else {
