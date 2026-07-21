@@ -7,6 +7,10 @@ import lungsIcon from "../../assets/icon-lungs.png";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+// 低於此車速視為「停車中」，不自動調整輔助力。
+// 不用 >0 是因為車速在 0 附近會有微小抖動，會讓判定一直跳。
+const MIN_MOVING_KPH = 0.5;
+
 // 沒有數值時統一顯示破折號
 const fmt = (v, digits = 0) =>
   v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(digits);
@@ -266,27 +270,32 @@ export default function HeartRateMode({ onBack }) {
   // 引擎優先吃真實 hr/rr/fi（非 demo 且有值時）；沒有就依 realOnly 決定等待或模擬
   const { live } = useHeartRateEngine(base, demoBand, vitals, realOnly);
 
-  // ⛔ 心肺模式自動控制輔助力：暫時停用（整段註解，不對真車送任何 ASSIST 指令）。
-  // 停用原因：這段只檢查 isDemo/phase/canControl，沒檢查 live.real——
-  // 毫米波沒接上時引擎會退回「模擬心率曲線」，等於用假資料反覆改真車段位。
-  // 要重新啟用：把下面整段解開，並在條件加上 `!live?.real` 就 return（只有真實
-  // 生理資料才允許控車）。畫面上的段數條不受影響，照常顯示引擎決策結果。
-  //
+  // 心肺模式自動控制輔助力：把引擎決策出的段位，用真車控制指令送出。
   //   指令＝ "ASSIST,<0-5>"（走 ble.setAssist → 韌體 control_set_assist_level，收 0~5），
-  //   與 BLE/ble_phone.html 的助力按鈕同一條路徑。段位 6（無輔助）對應 0（off）。
-  // 只在「連到真車、可控制、非模擬」且段位有變動時才送，避免每 0.5 秒洗爆 BLE。
-  // const lastAssistRef = useRef(null);
-  // useEffect(() => {
-  //   if (isDemo || phase !== "connected" || !canControl) {
-  //     lastAssistRef.current = null; // 斷線/模擬：清掉，之後重連第一筒仍會送
-  //     return;
-  //   }
-  //   if (live?.gear == null) return;
-  //   const level = live.gear === 6 ? 0 : clamp(live.gear, 0, 5);
-  //   if (level === lastAssistRef.current) return;
-  //   lastAssistRef.current = level;
-  //   setAssist(level);
-  // }, [live?.gear, isDemo, phase, canControl, setAssist]);
+  //   與 BLE/ble_phone.html 的助力按鈕同一路徑；段位 6（無輔助）對應 0（off）。
+  //
+  // ⚠️ 只有 live.real（引擎正在吃毫米波實測 hr/rr）才准控車。毫米波沒接上時引擎會
+  //    退回模擬心率曲線，若照送就是拿假資料反覆改真車段位——所以 !live.real 直接擋掉。
+  //    畫面上的段數條不受影響，照常顯示引擎決策結果。
+  // 另只在段位「有變動」時才送，避免每 0.5 秒洗爆 BLE。
+  //
+  // 車速 0（停車中）也不送：停著時心率仍在變動，會讓輔助力一直被改，
+  // 起步瞬間就套用到不合適的段位。停車期間維持車上現有段位，起步後再接手。
+  const speedKph = data?.speedKph;
+  const moving = speedKph != null && speedKph > MIN_MOVING_KPH;
+  const lastAssistRef = useRef(null);
+  useEffect(() => {
+    // 模擬資料 / 沒連上真車 / 不能送控制 / 不是真實生理資料 / 停車中 → 一律不送
+    if (isDemo || phase !== "connected" || !canControl || !live?.real || !moving) {
+      lastAssistRef.current = null; // 清掉，之後恢復條件時第一筆仍會送
+      return;
+    }
+    if (live.gear == null) return;
+    const level = live.gear === 6 ? 0 : clamp(live.gear, 0, 5);
+    if (level === lastAssistRef.current) return;
+    lastAssistRef.current = level;
+    setAssist(level);
+  }, [live?.gear, live?.real, isDemo, phase, canControl, moving, setAssist]);
 
   // 選 demo 強度：沒設基準線時先套預設值，再套用選到的強度（同時關掉「只用真實」）
   const pickDemo = (band) => {
