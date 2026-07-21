@@ -4,7 +4,6 @@
 import { useEffect, useRef, useState } from "react";
 import BleConnectPanel from "./ble/BleConnectPanel.jsx";
 import { useBle } from "./ble/BleContext.jsx";
-import powerImg from "./assets/power-2.png";
 import normalImg from "./assets/mode-normal.png";
 import batteryImg from "./assets/mode-battery.png";
 import heartImg from "./assets/mode-heart.png";
@@ -170,7 +169,7 @@ export default function HomeScreen({ onSelect, pending }) {
           <circle className="home-power-ring-bg" cx="22" cy="22" r="20" />
           <circle className="home-power-ring-fg" cx="22" cy="22" r="20" />
         </svg>
-        <img src={powerImg} alt="關機" draggable="false" />
+        <span className="home-power-glyph" aria-hidden="true" />
       </button>
       {powerHold && <div className="home-power-hint">持續按住…放開取消</div>}
       {powerMsg && <div className="home-power-msg">{powerMsg}</div>}

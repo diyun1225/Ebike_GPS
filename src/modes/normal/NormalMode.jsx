@@ -331,6 +331,7 @@ export default function NormalMode({ onBack }) {
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
   const connected = phase === "connected";
   const piConnected = pi?.phase === "connected";
+  const piLog = pi?.logLines || []; // 樹莓派專線診斷 log（手機沒 console，顯示在畫面上）
 
   // 把生理量測併進車況資料：hr/rr/疲勞度（fi）。沒帶到就保留車況原值。
   const v = vitals;
@@ -375,13 +376,16 @@ export default function NormalMode({ onBack }) {
 
       {/* 診斷面板：對照 ble_phone.html 的「診斷 Log」＋「原始封包」。
           手機（Bluefy）沒有 console，靠這裡看連線卡在哪步、板子有沒有在送資料。 */}
-      {(logLines.length > 0 || rawLines.length > 0) && (
+      {(logLines.length > 0 || rawLines.length > 0 || piLog.length > 0) && (
         <div className="nm-diag">
           <button
             className="nm-diag-toggle"
             onClick={() => setShowDiag((v) => !v)}
           >
-            <span>診斷資訊（log {logLines.length}・封包 {rawLines.length}）</span>
+            <span>
+              診斷資訊（log {logLines.length}・封包 {rawLines.length}・樹莓派{" "}
+              {piLog.length}）
+            </span>
             <span>{showDiag ? "▲" : "▼"}</span>
           </button>
 
@@ -392,6 +396,17 @@ export default function NormalMode({ onBack }) {
                 <button className="nm-diag-clear" onClick={clearLog}>
                   清空
                 </button>
+              </div>
+
+              {/* 樹莓派專線：⑦[Pi] 才代表有收到；⚠/✗ 代表收到但被丟棄（看原因） */}
+              <div className="nm-diag-block">
+                <div className="nm-diag-title">
+                  樹莓派 Log（目前 hr={String(vitals?.hr ?? "—")} rr=
+                  {String(vitals?.rr ?? "—")} fi={String(vitals?.fi ?? "—")}）
+                </div>
+                <pre className="nm-diag-pre">
+                  {piLog.length ? piLog.join("\n") : "（尚未連線樹莓派）"}
+                </pre>
               </div>
 
               <div className="nm-diag-block">

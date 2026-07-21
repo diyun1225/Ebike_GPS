@@ -15,17 +15,38 @@ import { connectVitals } from "./vitalsBle.js";
  */
 
 const UI_REFRESH_MS = 200; // 5Hz
+const MAX_LOG = 200;
+
+// 現在時間字串（HH:MM:SS），只做顯示用
+const nowStr = () => new Date().toLocaleTimeString();
 
 export function useVitalsBle() {
   const [phase, setPhase] = useState("idle");
   const [status, setStatus] = useState("尚未連線");
   const [error, setError] = useState(null);
   const [vitals, setVitals] = useState({ hr: null, rr: null, fi: null });
+  // 診斷 log：手機（Bluefy）沒有 console，靠這個在畫面上看卡在哪一步
+  const [logLines, setLogLines] = useState([]);
 
   const connRef = useRef(null);
   const vitalsRef = useRef({ hr: null, rr: null, fi: null });
+  const logBufRef = useRef([]);
   const dirtyRef = useRef(false);
   const timerRef = useRef(null);
+
+  // 收到的 log 先進 ref，由下方計時器統一刷進 state（避免每筆都重繪）
+  const pushLog = useCallback((msg) => {
+    console.log("[Pi]", msg);
+    const buf = logBufRef.current;
+    buf.unshift(`[${nowStr()}] ${msg}`);
+    if (buf.length > MAX_LOG) buf.length = MAX_LOG;
+    dirtyRef.current = true;
+  }, []);
+
+  const clearLog = useCallback(() => {
+    logBufRef.current = [];
+    setLogLines([]);
+  }, []);
 
   const startFlush = useCallback(() => {
     if (timerRef.current != null) return;
@@ -33,6 +54,7 @@ export function useVitalsBle() {
       if (!dirtyRef.current) return;
       dirtyRef.current = false;
       setVitals({ ...vitalsRef.current });
+      setLogLines(logBufRef.current.slice()); // 複製出新參考，觸發重繪
     }, UI_REFRESH_MS);
   }, []);
 
@@ -67,7 +89,7 @@ export function useVitalsBle() {
           };
           dirtyRef.current = true;
         },
-        onLog: (m) => console.log("[Pi]", m),
+        onLog: pushLog,
       });
       connRef.current = conn;
       setPhase("connected");
@@ -78,11 +100,13 @@ export function useVitalsBle() {
       } else {
         setError(e?.message || String(e));
         setStatus("連線失敗");
+        pushLog("✗ 連線失敗：" + (e?.message || e));
       }
       setPhase("idle");
+      setLogLines(logBufRef.current.slice()); // 失敗時計時器已停，手動刷一次才看得到
       stopFlush();
     }
-  }, [startFlush, stopFlush]);
+  }, [startFlush, stopFlush, pushLog]);
 
   const disconnect = useCallback(() => {
     connRef.current?.disconnect();
@@ -99,5 +123,5 @@ export function useVitalsBle() {
     };
   }, [stopFlush]);
 
-  return { phase, status, error, vitals, connect, disconnect };
+  return { phase, status, error, vitals, logLines, clearLog, connect, disconnect };
 }

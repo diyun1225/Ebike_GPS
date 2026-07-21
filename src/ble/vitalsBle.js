@@ -45,6 +45,48 @@ export function pickVitals(obj) {
   return Object.keys(out).length ? out : null;
 }
 
+const MAX_BUF = 4096; // 緩衝上限：超過還拼不出完整 JSON 就清空，避免無限膨脹
+
+// 從緩衝抽出所有「大括號成對」的完整 JSON 字串，回傳 [完整物件陣列, 剩餘緩衝]。
+// 不依賴換行：送出端有沒有加 \n 都能解；被 BLE 切斷的半包會留在剩餘緩衝等下一段拼回。
+// 會正確跳過字串內的大括號（例："a{b"），並丟掉物件之間的雜訊（空白 / 換行）。
+export function extractJsonObjects(buf) {
+  const out = [];
+  let depth = 0;
+  let start = -1;
+  let lastEnd = 0;
+  let inStr = false;
+  let esc = false;
+
+  for (let i = 0; i < buf.length; i++) {
+    const c = buf[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+    } else if (c === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === "}") {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          out.push(buf.slice(start, i + 1));
+          lastEnd = i + 1;
+          start = -1;
+        }
+      }
+    }
+  }
+  // 還沒收完的半包（start >= 0）留著；否則只留最後一個完整物件之後的內容
+  const rest = start >= 0 ? buf.slice(start) : buf.slice(lastEnd);
+  return [out, rest];
+}
+
 export async function connectVitals(opts = {}) {
   const onVitals = opts.onVitals || function () {};
   const onStatus = opts.onStatus || function () {};
@@ -83,27 +125,28 @@ export async function connectVitals(opts = {}) {
     // 診斷用：每次收到的原始位元組都印出來（含空行/亂碼），才看得出 Pi 到底送了什麼
     onLog(`⑦[Pi] 收到 #${rxCount}（${e.target.value.byteLength} bytes）: ${JSON.stringify(chunk)}`);
     buf += chunk;
-    let i;
-    while ((i = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, i).trim();
-      buf = buf.slice(i + 1);
-      if (!line) continue; // 空行（心跳）忽略，不算失敗
-      if (line[0] !== "{") {
-        onLog("⚠[Pi] 丟棄：不是 JSON 開頭（非 { ）→ " + JSON.stringify(line));
-        continue;
-      }
+    // 用大括號配對抽出完整 JSON，不依賴換行結尾
+    // （實測樹莓派送的是 35 bytes 的 {"hr":..,"rr":..,"fi":..}，後面「沒有」\n，
+    //   舊版靠 indexOf("\n") 切行 → 永遠切不出來，資料全卡在 buffer。）
+    const [objs, rest] = extractJsonObjects(buf);
+    buf = rest;
+    // 保險：buffer 一直長不完整（收到非 JSON 垃圾）就丟掉，避免無限膨脹
+    if (buf.length > MAX_BUF) {
+      onLog(`⚠[Pi] 緩衝超過 ${MAX_BUF} 字元仍拼不出 JSON，已清空`);
+      buf = "";
+    }
+    for (const text of objs) {
       try {
-        const obj = JSON.parse(line);
-        const v = pickVitals(obj);
+        const v = pickVitals(JSON.parse(text));
         if (v) {
           onVitals(v);
-          onLog("♥[Pi] " + line);
+          onLog("♥[Pi] " + text);
         } else {
-          onLog("⚠[Pi] JSON 沒有 hr/rr/fi 欄位 → " + line);
+          // 例如 {"status":"streaming"} 這種狀態訊息，正常，不是錯誤
+          onLog("ℹ[Pi] 非生理資料（沒有 hr/rr/fi）→ " + text);
         }
       } catch {
-        // 這行以 { 開頭又有換行結尾卻 parse 失敗 → JSON 壞掉（已丟棄，非片段）
-        onLog("✗[Pi] JSON 解析失敗（格式壞掉，已丟棄）：" + JSON.stringify(line));
+        onLog("✗[Pi] JSON 解析失敗（已丟棄）：" + JSON.stringify(text));
       }
     }
   });

@@ -1,19 +1,21 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import HomeScreen from "./HomeScreen.jsx";
 import NormalMode from "./modes/normal/NormalMode.jsx";
 import NavigationMode from "./modes/navigation/NavigationMode.jsx";
 import HeartRateMode from "./modes/heartrate/HeartRateMode.jsx";
 import AssistMode from "./modes/assist/AssistMode.jsx";
 import { BleProvider, useBle } from "./ble/BleContext.jsx";
-import { modeIdToFrame, MODE_LABEL_BY_ID } from "./modeFrame.js";
+import { modeIdToFrame, MODE_CODE_BY_ID, MODE_LABEL_BY_ID } from "./modeFrame.js";
 import RideControls from "./controls/RideControls.jsx";
 
+// 等運算板回 MODEACK 的逾時（ms）。
+// AI 板切模式要載入模型，實測可能要十幾秒才回 ACK——逾時抓太短會變成
+// 假的「連接失敗」（模式其實有切成功）。這裡給很寬鬆的上限，並且在等待
+// 期間就提供「直接進入」，使用者不必等滿也能自己跳過。
+const MODEACK_TIMEOUT_MS = 60000;
+
 // 整個 App 的最上層：用 BleProvider 讓全 App 共用「一條」與運算板的 BLE 連線，
-// 再在 AppInner 處理「選模式 → 確認 → 送 MODEREQ → 進入」的流程。
-//
-// 註：這裡「不等」板子回 ACK。AI 板切模式時要載入模型，回覆可能慢到十幾秒，
-//     等 ACK 會讓使用者一直卡在「連接失敗」的假錯誤（實際上模式有切成功）。
-//     ACK 仍然有收、有解析，只是改成寫進診斷 Log 供對照，不擋畫面。
+// 再在 AppInner 處理「選模式 → 確認 → 送 MODEREQ → 等板子 ACK → 進入」的流程。
 export default function App() {
   return (
     <BleProvider>
@@ -26,6 +28,21 @@ function AppInner() {
   const ble = useBle();
   const [mode, setMode] = useState(null); // null = 主畫面
   const [pending, setPending] = useState(null); // 待確認進入的 modeId（顯示確認視窗）
+  // 送封包 / 等 ACK 的即時狀態
+  const [flow, setFlow] = useState({ busy: false, msg: "", error: false });
+  const [waited, setWaited] = useState(0); // 已等待秒數（讓使用者看得出還活著）
+  // 每次按「確定」遞增：等待中若被取消或手動進入，舊的那次 ACK 回來要忽略
+  const enterSeqRef = useRef(0);
+
+  // 等待中每秒更新一次計數
+  useEffect(() => {
+    if (!flow.busy) {
+      setWaited(0);
+      return;
+    }
+    const t = setInterval(() => setWaited((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [flow.busy]);
 
   // 偵測「頁面被重新載入」：sessionStorage 在同一分頁的 reload 之間會保留。
   // 掛載時旗標已存在 → 這不是第一次開啟，是頁面被重載了（dev 熱更新 / iOS 記憶體不足
@@ -39,26 +56,58 @@ function AppInner() {
   const backToHome = () => setMode(null);
 
   // 主畫面點模式 → 先跳確認視窗，還不進入
-  const requestEnter = (modeId) => setPending(modeId);
-  const cancelEnter = () => setPending(null);
-  const enterNow = (modeId) => {
+  const requestEnter = (modeId) => {
+    setFlow({ busy: false, msg: "", error: false });
+    setPending(modeId);
+  };
+  const cancelEnter = () => {
+    enterSeqRef.current++; // 作廢進行中的等待
+    setFlow({ busy: false, msg: "", error: false });
     setPending(null);
+  };
+  const enterNow = (modeId) => {
+    enterSeqRef.current++; // 已經進去了，晚到的 ACK 不要再動畫面
+    setPending(null);
+    setFlow({ busy: false, msg: "", error: false });
     setMode(modeId);
   };
 
-  // 按「確定」：連線中就送 MODEREQ 通知板子，然後「立刻」進入，不等 ACK。
-  // （板子載入模型可能要十幾秒才回 ACK，等它會變成假的「連接失敗」。）
-  const confirmEnter = () => {
+  // 按「確定」：連線中就送 MODEREQ，並等板子回 ACK（收到才進入）。
+  // 板子要載入模型，可能十幾秒才回——等待期間畫面轉圈並顯示已等待秒數，
+  // 使用者隨時可按「直接進入」跳過，不會被卡住。
+  const confirmEnter = async () => {
     const modeId = pending;
     const frame = modeIdToFrame(modeId);
-    const canSend = ble.phase === "connected" && ble.canControl && frame;
+    const code = MODE_CODE_BY_ID[modeId];
+    // isDemo 要排除：模擬模式會把 phase/canControl 設成已連線的樣子，但沒有
+    // 真板子會回 ACK，等下去只會空轉到逾時。
+    const canSend =
+      ble.phase === "connected" && ble.canControl && !ble.isDemo && frame;
 
-    if (canSend) {
-      // 不 await：BLE 寫入本身很快，但萬一卡住也不該擋住進入模式。
-      // sendCommand 內部已經 try/catch，這裡再兜一層保險。
-      Promise.resolve(ble.sendCommand(frame.tx)).catch(() => {});
+    if (!canSend) {
+      enterNow(modeId); // 沒連線 / 模擬中 / 無法送 → 直接進入
+      return;
     }
-    enterNow(modeId);
+
+    const seq = ++enterSeqRef.current;
+    setFlow({ busy: true, msg: "運算板載入模型中，請稍候…", error: false });
+    // 先掛好等待再送指令，避免板子回太快時 ACK 落在註冊空窗期被錯過
+    const ackPromise = ble.waitForModeAck(code, MODEACK_TIMEOUT_MS);
+    Promise.resolve(ble.sendCommand(frame.tx)).catch(() => {});
+
+    const ok = await ackPromise;
+    if (seq !== enterSeqRef.current) return; // 已被取消 / 使用者自己進去了
+
+    if (ok) {
+      enterNow(modeId); // 收到 ACK → 確認板子就緒，進入
+    } else {
+      // 逾時不代表失敗（模式通常已切成功），所以不套錯誤樣式、不說「失敗」
+      setFlow({
+        busy: false,
+        msg: "還沒收到運算板回覆。模式通常已切換成功，可再等一下或直接進入。",
+        error: false,
+      });
+    }
   };
 
   // 目前畫面
@@ -90,21 +139,26 @@ function AppInner() {
       {pending && (
         <EnterModal
           modeId={pending}
+          flow={flow}
+          waited={waited}
           connected={ble.phase === "connected" && ble.canControl}
           onConfirm={confirmEnter}
           onCancel={cancelEnter}
+          onEnterAnyway={() => enterNow(pending)}
         />
       )}
     </div>
   );
 }
 
-// 進入模式的確認視窗：按確定就送封包並立刻進入（不等板子 ACK，見上方說明）
-function EnterModal({ modeId, connected, onConfirm, onCancel }) {
+// 進入模式的確認視窗：確定 → 送封包並等板子 ACK（轉圈＋秒數）。
+// 等待中與逾時後都提供「直接進入」，不會把使用者卡住。
+function EnterModal({ modeId, flow, waited, connected, onConfirm, onCancel, onEnterAnyway }) {
   const label = MODE_LABEL_BY_ID[modeId] || "此模式";
+  const timedOut = !flow.busy && !!flow.msg; // 等過但沒收到 → 顯示重試/直接進入
 
   return (
-    <div className="enter-modal-backdrop" onClick={onCancel}>
+    <div className="enter-modal-backdrop" onClick={flow.busy ? undefined : onCancel}>
       <div className="enter-modal" onClick={(e) => e.stopPropagation()}>
         <div className="enter-modal-icon">🚴</div>
         <h3>
@@ -112,17 +166,53 @@ function EnterModal({ modeId, connected, onConfirm, onCancel }) {
         </h3>
         <p className="enter-modal-sub">
           {connected
-            ? "進入後會通知運算板切換模式。"
+            ? "進入後會通知運算板切換模式，並等待板子確認就緒。"
             : "尚未連線藍牙，將直接進入（不會通知運算板）。"}
         </p>
 
+        {flow.msg && (
+          <div className={`enter-modal-status ${flow.error ? "err" : ""}`}>
+            {flow.busy && <span className="enter-spin" aria-hidden="true" />}
+            <span>
+              {flow.msg}
+              {flow.busy && waited > 0 && `（已等待 ${waited} 秒）`}
+            </span>
+          </div>
+        )}
+
         <div className="enter-modal-actions">
-          <button className="enter-btn cancel" onClick={onCancel}>
-            取消
-          </button>
-          <button className="enter-btn ok" onClick={onConfirm}>
-            確定
-          </button>
+          {flow.busy ? (
+            // 等待中：可以取消，也可以不等直接進入
+            <>
+              <button className="enter-btn cancel" onClick={onCancel}>
+                取消
+              </button>
+              <button className="enter-btn ghost" onClick={onEnterAnyway}>
+                直接進入
+              </button>
+            </>
+          ) : timedOut ? (
+            <>
+              <button className="enter-btn cancel" onClick={onCancel}>
+                取消
+              </button>
+              <button className="enter-btn ghost" onClick={onEnterAnyway}>
+                直接進入
+              </button>
+              <button className="enter-btn ok" onClick={onConfirm}>
+                再等等
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="enter-btn cancel" onClick={onCancel}>
+                取消
+              </button>
+              <button className="enter-btn ok" onClick={onConfirm}>
+                確定
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
