@@ -96,6 +96,19 @@ export async function ccpaBleConnect(opts) {
         }
       }
 
+      // ESP32 狀態訊息（# 開頭），不是 CAN 封包。這些是判斷「指令到底有沒有上 CAN」
+      // 的關鍵，之前會掉進下面的 parseRawLine 被當成「解析失敗」丟掉。
+      //   # CMD [ASSIST,3] -> sent / FAILED   指令有沒有成功送上匯流排
+      //   # 他人下的 ASSISTREQ level=N        別的節點（車表 / AI 板）在搶控制權
+      //   # TWAI state=... TEC=.. REC=..      匯流排狀態
+      if (line[0] === "#") {
+        const m = /^#\s*CMD\s*\[(.+?)\]\s*->\s*(\S+)/.exec(line);
+        if (m) onLog(`${m[2] === "sent" ? "✅" : "❌"} 指令上 CAN：[${m[1]}] → ${m[2]}`);
+        else if (/他人下的 ASSISTREQ/.test(line)) onLog("⚠ 有其他節點在下助力指令：" + line);
+        else onLog("ℹ " + line);
+        continue;
+      }
+
       const f = CcpaDecoder.parseRawLine(line);
       if (!f) {
         onLog("⑧ ✗ 解析失敗（格式不符）：" + JSON.stringify(line));

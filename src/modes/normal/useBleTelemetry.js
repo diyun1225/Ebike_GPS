@@ -61,6 +61,7 @@ export function useBleTelemetry() {
   const vitalsRef = useRef({ hr: null, rr: null, fi: null }); // 生理量測先進 ref，再由計時器刷進 state
   const demoRef = useRef(null); // 模擬資料的計時器 id
   const demoAssistRef = useRef(3); // 模擬時的助力段位（讓按段位鈕看得到變化）
+  const commandedAssistRef = useRef(null); // 自己送出的最後段位（畫面以它為準，見 startFlush）
 
   // 高速資料先進這些 ref（notify handler 只做這件事，不碰 React）
   const logBufRef = useRef([]);
@@ -74,7 +75,16 @@ export function useBleTelemetry() {
     timerRef.current = setInterval(() => {
       if (!dirtyRef.current) return;
       dirtyRef.current = false;
-      setData(snapRef.current);
+      // 助力段位以「我們自己送出的最後指令」為準。
+      // ⚠️ ESP32 的 TWAI 收不到自己送出的框 → bus 上收到的 ASSISTREQ 必定來自
+      //    別的節點（車表 / AI 板）。若直接顯示它，畫面會永遠是別人下的值
+      //    （實測就是一直顯示 off），而不是使用者設的段位。
+      const snap = snapRef.current;
+      setData(
+        snap && commandedAssistRef.current != null
+          ? { ...snap, assistLevel: commandedAssistRef.current }
+          : snap
+      );
       setVitals({ ...vitalsRef.current });
       setLogLines(logBufRef.current.slice()); // 複製出新陣列參考，觸發重繪
       setRawLines(rawBufRef.current.slice());
@@ -254,6 +264,7 @@ export function useBleTelemetry() {
     setStatus("已斷線");
     setCanControl(false);
     setCommandedAssist(null);
+    commandedAssistRef.current = null; // 斷線清掉，下次連線不沿用舊段位
     snapRef.current = null; // 清空車況，斷線後畫面回到 --（不停在最後一筆舊數字）
     setData(null);
     vitalsRef.current = { hr: null, rr: null, fi: null }; // 清空生理量測
@@ -370,6 +381,8 @@ export function useBleTelemetry() {
       if (!Number.isFinite(n)) return;
       const lv = Math.max(0, Math.min(5, n));
       setCommandedAssist(lv); // 這台車不回報段位，用它當畫面回饋
+      commandedAssistRef.current = lv; // 同上，給 startFlush 併進 data.assistLevel
+      dirtyRef.current = true; // 讓畫面立刻反映，不必等下一包遙測
       demoAssistRef.current = lv; // 模擬模式下讓 assistLevel 也跟著變
       sendCommand("ASSIST," + lv);
     },
