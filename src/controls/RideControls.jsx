@@ -4,7 +4,7 @@
 // 不會發生「想升變速卻按到避震減檔」這種相反操作的誤觸。
 // 顯示哪些項目依模式而定（見 rideControlsConfig.js）；目前只有一般模式使用，
 // 其餘模式的變速/避震/輔助力都由該模式在背景自動控制。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBle } from "../ble/BleContext.jsx";
 import {
   RIDE_CONTROLS_BY_MODE,
@@ -54,8 +54,16 @@ export default function RideControls({ mode }) {
   // 變速上限：車子回報的 GearRange 為準，但不超過開放的 SHIFT_MAX；沒遙測用備援
   const gearMax = Math.min(snap?.rearGear?.max || SHIFT_FALLBACK_MAX, SHIFT_MAX);
 
+  // 剛手動調過輔助力後，這個時間點之前先信本地值，不讓遙測把畫面拉回去。
+  // （對照 ble_phone.html 變速的 gearHoldUntil：車子讀回有延遲，不 hold 的話
+  //   一按就被舊值蓋掉，看起來像「按了沒反應、改不動」；若 AI 板把段位壓在 0 或 5，
+  //   連 +/- 按鈕都會因為上下限而變灰。）
+  const ASSIST_HOLD_MS = 1500; // 手動調整後先信本地值多久（車子讀回有延遲）
+  const assistHoldRef = useRef(0);
+
   // 遙測有值就同步（輔助力、目前檔位是「車子說了算」）
   useEffect(() => {
+    if (Date.now() < assistHoldRef.current) return; // 剛手動調整過，先不被拉回
     if (snap?.assistLevel != null) setAssistLocal(snap.assistLevel);
     else if (ble.commandedAssist != null) setAssistLocal(ble.commandedAssist);
   }, [snap?.assistLevel, ble.commandedAssist]);
@@ -77,6 +85,7 @@ export default function RideControls({ mode }) {
 
   const doAssist = (v) => {
     const lv = clamp(v, ASSIST_MIN, ASSIST_MAX);
+    assistHoldRef.current = Date.now() + ASSIST_HOLD_MS; // 先信本地值，別被遙測拉回
     setAssistLocal(lv);
     ble.setAssist(lv);
   };
