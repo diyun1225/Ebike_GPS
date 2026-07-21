@@ -53,7 +53,18 @@ function AppInner() {
     return hit;
   });
 
-  const backToHome = () => setMode(null);
+  // 離開任何模式回到主畫面 → 通知運算板切回「一般模式」(code 1)。
+  // 主畫面本身不屬於任何特殊模式，讓板子回到預設狀態，才不會停在上一個模式
+  // （例如智慧輔助還在自動控輔助力）。
+  // 不等 ACK：返回動作不該被板子載入模型的時間卡住。
+  const backToHome = () => {
+    const frame = modeIdToFrame("normal");
+    // 與進入模式同一套守門：模擬中沒有真板子，不用送
+    const canSend =
+      ble.phase === "connected" && ble.canControl && !ble.isDemo && frame;
+    if (canSend) Promise.resolve(ble.sendCommand(frame.tx)).catch(() => {});
+    setMode(null);
+  };
 
   // 主畫面點模式 → 先跳確認視窗，還不進入
   const requestEnter = (modeId) => {

@@ -53,6 +53,10 @@ export function useBleTelemetry() {
   const [modeState, setModeState] = useState(null); // AI 板廣播的「目前生效模式」(1~3)，沒收到為 null
 
   const connRef = useRef(null);
+  // 連線世代：按「取消」就 +1，讓還在進行中的那次 connect 結果全部作廢。
+  // （瀏覽器取消裝置選擇器時，requestDevice 有時不會 reject，promise 就一直吊著，
+  //   畫面會卡在「連線中…」。有了世代碼，取消後即使它稍後才回來也不會蓋掉狀態。）
+  const genRef = useRef(0);
   const ackWaitersRef = useRef([]); // 等待 MODEACK 的 promise resolver 清單
   const vitalsRef = useRef({ hr: null, rr: null, fi: null }); // 生理量測先進 ref，再由計時器刷進 state
   const demoRef = useRef(null); // 模擬資料的計時器 id
@@ -92,6 +96,8 @@ export function useBleTelemetry() {
   }, []);
 
   const connect = useCallback(async () => {
+    const gen = ++genRef.current; // 這次連線的世代碼
+    const stale = () => genRef.current !== gen; // 期間被取消 / 重按 → 這次作廢
     setError(null);
     setPhase("connecting");
     snapRef.current = null; // 清掉上一段連線的殘值，避免沿用到舊車況
@@ -99,6 +105,7 @@ export function useBleTelemetry() {
     try {
       const conn = await ccpaBleConnect({
         onStatus: (t) => {
+          if (stale()) return;
           setStatus(t);
           if (t === "已斷線") {
             setPhase("idle");
@@ -198,10 +205,16 @@ export function useBleTelemetry() {
           settle((w) => w.code == null || ack.echo === w.code || ack.echo < 0, ack.ok);
         },
       });
+      // 連上之前就被取消 → 這條連線不要了，直接斷掉，不要更新畫面
+      if (stale()) {
+        conn.disconnect();
+        return;
+      }
       connRef.current = conn;
       setCanControl(!!conn.canControl);
       setPhase("connected");
     } catch (e) {
+      if (stale()) return; // 已取消：不要用這次的錯誤蓋掉「已取消」狀態
       // 使用者在裝置選擇視窗按取消 → NotFoundError，不當作錯誤
       if (e && e.name === "NotFoundError") {
         setStatus("已取消");
@@ -214,6 +227,19 @@ export function useBleTelemetry() {
     }
   }, [startFlush, stopFlush]);
 
+  // 取消連線中：讓進行中的那次 connect 作廢，畫面立刻回到「未連線」。
+  // 需要它是因為瀏覽器取消裝置選擇器時 promise 可能永遠不會回來。
+  const cancelConnect = useCallback(() => {
+    genRef.current++;
+    connRef.current?.disconnect();
+    connRef.current = null;
+    setPhase("idle");
+    setStatus("已取消");
+    setError(null);
+    setCanControl(false);
+    stopFlush();
+  }, [stopFlush]);
+
   const disconnect = useCallback(() => {
     // 若在跑模擬資料，一併停掉
     if (demoRef.current != null) {
@@ -221,6 +247,7 @@ export function useBleTelemetry() {
       demoRef.current = null;
     }
     setIsDemo(false);
+    genRef.current++; // 主動斷線也讓進行中的連線作廢
     connRef.current?.disconnect();
     connRef.current = null;
     setPhase("idle");
@@ -368,6 +395,7 @@ export function useBleTelemetry() {
     logLines,
     rawLines,
     connect,
+    cancelConnect,
     disconnect,
     clearLog,
     canControl,

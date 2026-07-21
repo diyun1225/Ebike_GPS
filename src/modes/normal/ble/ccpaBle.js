@@ -14,7 +14,7 @@
  *   - connect 必須由「使用者點擊」觸發（放在 onclick 裡）。
  *   - 一個板子一次只能一個連線。
  */
-import { CcpaDecoder } from "./ccpaDecode.js";
+import { CcpaDecoder, parseMmwaveVitals, parseMmwaveFi } from "./ccpaDecode.js";
 import { pickVitals } from "../../../ble/vitalsBle.js";
 
 const SERVICE = "0000cc01-c3d5-40b4-ab51-611746a316f3";
@@ -26,7 +26,10 @@ export async function ccpaBleConnect(opts) {
   const onData = opts.onData || function () {};
   const onRaw = opts.onRaw || function () {};
   const onFrame = opts.onFrame || function () {}; // 每筆解析成功的 {id,dlc,data}（給上層自行判斷 ACK 等）
-  const onVitals = opts.onVitals || function () {}; // 毫米波生理量測 {hr,rr,fi}（JSON 行，非 CAN）
+  // 毫米波生理量測 {hr,rr,fi}：兩種來源都會走這裡——
+  //   ① 樹莓派/板子送的 JSON 行（hr/rr/fi）
+  //   ② CAN 0x1FA15000（d0=hr、d1=rr），見 parseMmwaveVitals
+  const onVitals = opts.onVitals || function () {};
   const onStatus = opts.onStatus || function () {};
   const onLog = opts.onLog || function () {}; // 診斷 log：①~⑧ 每步都記，方便在手機上看卡在哪
   const deviceName = opts.deviceName || "CCPA-Telemetry";
@@ -104,6 +107,24 @@ export async function ccpaBleConnect(opts) {
           .join(" ")}]`
       );
       onFrame(f); // 先把原始解析結果丟給上層（例：MODEACK 確認）
+
+      // 毫米波生理數據走 CAN 0x1FA15000（d0=hr、d1=rr，0xFF=該欄無效），
+      // 不是 JSON。解出來後併進與樹莓派同一條 vitals 管線。
+      const mv = parseMmwaveVitals(f);
+      if (mv) {
+        onLog(
+          `♥ 生理量測(CAN 0x1FA15000)：hr=${mv.hr ?? "—"} rr=${mv.rr ?? "—"}`
+        );
+        onVitals(mv);
+      }
+
+      // 疲憊值 fi 走另一個 ID 0x1FA15001（d0-1 = fi×100 uint16 LE，0xFFFF=無效）
+      const mf = parseMmwaveFi(f);
+      if (mf) {
+        onLog(`♥ 疲憊值(CAN 0x1FA15001)：fi=${mf.fi}%`);
+        onVitals(mf);
+      }
+
       dec.feed(line); // 解封包
       onData(dec.snapshot(), dec); // 每收到一包就回報最新解碼結果
     }

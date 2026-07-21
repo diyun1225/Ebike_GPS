@@ -27,6 +27,43 @@ const ID = {
 // 來源優先序：GENERAL_INFO 一旦給過值就鎖定，忽略 DEVICE 來源的同名值（避免兩邊打架）。
 const SRC = { NONE: 0, GENERAL: 1, DEVICE: 2 };
 
+// ── 毫米波生理數據：走 CAN，不是 JSON ──────────────────────────
+//   ID  = 0x1FA15000、DLC >= 2
+//   d[0] = 心率 hr（bpm）、d[1] = 呼吸率 rr（brpm）
+//   各自 0xFF = 該欄無效，兩個欄位獨立判斷（可能只有一個有效）
+// 對照 BLE/ccpa_decode.js（ESP32 韌體）的 ID_MMWAVE_VITALS 處理。
+// 不併進 snapshot()——生理量測在 App 走另一條 vitals 管線（與樹莓派 JSON 合流）。
+export const MMWAVE_VITALS_ID = 0x1fa15000;
+
+// 把 0x1FA15000 的 frame 解成 { hr, rr }（只回傳這包真的有效的欄位）。
+// 不是這個 ID／DLC 不足／兩欄都無效 → 回 null。
+export function parseMmwaveVitals(frame) {
+  if (!frame || frame.id !== MMWAVE_VITALS_ID) return null;
+  const d = frame.data || [];
+  if (d.length < 2) return null;
+  const out = {};
+  if (d[0] !== 0xff) out.hr = d[0];
+  if (d[1] !== 0xff) out.rr = d[1];
+  return Object.keys(out).length ? out : null;
+}
+
+// ── 毫米波疲憊值 fi：另一個 CAN ID ────────────────────────────
+//   ID  = 0x1FA15001、DLC >= 2
+//   d[0..1] = fi × 100，uint16 LE（fi 為 0~100 的百分比）
+//   0xFFFF = 無效
+// 例：raw = 640 → fi = 6.4 %
+export const MMWAVE_FI_ID = 0x1fa15001;
+
+// 把 0x1FA15001 的 frame 解成 { fi }（百分比 0~100）。無效／不是這個 ID → 回 null。
+export function parseMmwaveFi(frame) {
+  if (!frame || frame.id !== MMWAVE_FI_ID) return null;
+  const d = frame.data || [];
+  if (d.length < 2) return null;
+  const raw = d[0] | (d[1] << 8); // uint16 LE
+  if (raw === 0xffff) return null; // 無效
+  return { fi: raw / 100 };
+}
+
 const u16le = (d, i) => d[i] | (d[i + 1] << 8);
 const u24le = (d, i) => d[i] | (d[i + 1] << 8) | (d[i + 2] << 16);
 const tempC = (raw) => raw - 64;

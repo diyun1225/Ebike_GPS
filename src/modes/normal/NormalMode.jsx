@@ -322,16 +322,13 @@ export default function NormalMode({ onBack }) {
     logLines,
     rawLines,
     clearLog,
-    pi, // 樹莓派連線（狀態顯示 / 連線按鈕用）
-    vitals, // 統一生理量測（毫米波 hr/rr/fi，不管走樹莓派專線或單車 TX）
+    vitals, // 生理量測（毫米波 hr/rr/fi，走 CAN 0x1FA15000 或同條 TX 的 JSON）
   } = useBle(); // 共用 App 層那條連線（連線在主畫面做，這裡只讀資料）
   // const imuMq = useImuMqtt(); // 進入一般模式就連 MQTT 讀 IMU，離開自動斷線
   // ↑ demo 前先關閉：MQTT broker 尚未接通，暫時不連、不顯示 IMU 區（見下方註解的 <ImuPanel/>）
   const [confirmExit, setConfirmExit] = useState(false);
   const [showDiag, setShowDiag] = useState(false); // 診斷面板（log + 原始封包）展開
   const connected = phase === "connected";
-  const piConnected = pi?.phase === "connected";
-  const piLog = pi?.logLines || []; // 樹莓派專線診斷 log（手機沒 console，顯示在畫面上）
 
   // 把生理量測併進車況資料：hr/rr/疲勞度（fi）。沒帶到就保留車況原值。
   const v = vitals;
@@ -357,17 +354,17 @@ export default function NormalMode({ onBack }) {
         {/* 自行車連線狀態不在這裡重複顯示，統一由下方 BleConnectPanel 呈現（含連線/模擬按鈕） */}
       </div>
 
-      {/* 自行車 + 樹莓派連線控制（不用回主畫面即可連線） */}
+      {/* 自行車連線控制（不用回主畫面即可連線） */}
       <BleConnectPanel className="nm-ble-stack" />
 
       {error && <div className="nm-error">{error}</div>}
 
-      {connected || data || piConnected ? (
+      {connected || data ? (
         <Dashboard data={view} />
       ) : (
         <div className="nm-empty">
           <div className="nm-empty-icon">🚲</div>
-          <p>尚未連線。點上方「連線自行車」與 CCPA-Telemetry 配對，即可即時讀取車況數據；「連線樹莓派」可讀心率／呼吸率／疲勞度。</p>
+          <p>尚未連線。點上方「連線自行車」與 CCPA-Telemetry 配對，即可即時讀取車況數據與心率／呼吸率／疲勞度。</p>
           <p className="nm-empty-hint">
             需 HTTPS 或 localhost；iPhone 請用 Bluefy 瀏覽器開啟。
           </p>
@@ -376,15 +373,14 @@ export default function NormalMode({ onBack }) {
 
       {/* 診斷面板：對照 ble_phone.html 的「診斷 Log」＋「原始封包」。
           手機（Bluefy）沒有 console，靠這裡看連線卡在哪步、板子有沒有在送資料。 */}
-      {(logLines.length > 0 || rawLines.length > 0 || piLog.length > 0) && (
+      {(logLines.length > 0 || rawLines.length > 0) && (
         <div className="nm-diag">
           <button
             className="nm-diag-toggle"
             onClick={() => setShowDiag((v) => !v)}
           >
             <span>
-              診斷資訊（log {logLines.length}・封包 {rawLines.length}・樹莓派{" "}
-              {piLog.length}）
+              診斷資訊（log {logLines.length}・封包 {rawLines.length}）
             </span>
             <span>{showDiag ? "▲" : "▼"}</span>
           </button>
@@ -398,15 +394,13 @@ export default function NormalMode({ onBack }) {
                 </button>
               </div>
 
-              {/* 樹莓派專線：⑦[Pi] 才代表有收到；⚠/✗ 代表收到但被丟棄（看原因） */}
+              {/* 生理量測目前值：走 CAN 0x1FA15000（log 會有「♥ 生理量測(CAN…)」）
+                  或同條 TX 混進來的 JSON（log 會有「♥」）。都沒有＝板子沒送。 */}
               <div className="nm-diag-block">
                 <div className="nm-diag-title">
-                  樹莓派 Log（目前 hr={String(vitals?.hr ?? "—")} rr=
+                  生理量測（hr={String(vitals?.hr ?? "—")} rr=
                   {String(vitals?.rr ?? "—")} fi={String(vitals?.fi ?? "—")}）
                 </div>
-                <pre className="nm-diag-pre">
-                  {piLog.length ? piLog.join("\n") : "（尚未連線樹莓派）"}
-                </pre>
               </div>
 
               <div className="nm-diag-block">

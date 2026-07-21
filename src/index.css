@@ -1249,13 +1249,6 @@ button:disabled {
   transition: --zc 0.6s ease;
 }
 
-/* 樹莓派連線狀態列（心肺模式）：沿用 home-ble 膠囊，排進內容流置中 */
-.hr-pi {
-  display: flex;
-  justify-content: center;
-  margin: 0 0 10px;
-}
-
 /* 目前疲勞度 */
 /* 基準線設定 */
 .hr-setup {
@@ -1529,7 +1522,7 @@ button:disabled {
   background: #268a4f;
 }
 
-/* ── 主畫面：連線狀態按鈕（自行車 + 樹莓派，左上直向堆疊）──────── */
+/* ── 主畫面：連線狀態按鈕（自行車 / ESP32，左上直向堆疊）──────── */
 .home-ble-stack {
   position: relative; /* 排在內容流裡（非絕對定位），才不會蓋到標題 */
   z-index: 40;
@@ -2277,7 +2270,7 @@ button:disabled {
   margin-top: -10px;
   display: flex;
   flex-direction: column;
-  align-items: flex-end; /* 模擬資料/樹莓派連線靠右，對齊右上角 */
+  align-items: flex-end; /* 連線狀態靠右，對齊右上角 */
   gap: 8px;
 }
 

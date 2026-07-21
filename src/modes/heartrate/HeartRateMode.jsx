@@ -109,45 +109,6 @@ function GearBar({ gear, color }) {
   );
 }
 
-// 樹莓派（生理量測）連線狀態列：斷線時可直接在本頁手動重連，
-// 不用回主畫面或一般模式。樣式沿用主畫面的 home-ble 膠囊。
-function PiStatusBar() {
-  const { pi } = useBle();
-  const piConnected = pi?.phase === "connected";
-  return (
-    <div className="hr-pi">
-      <div className={`home-ble ${piConnected ? "on" : ""}`}>
-        <span className={`home-ble-dot ${piConnected ? "on" : ""}`} />
-        <span className="home-ble-txt">
-          {piConnected
-            ? "樹莓派已連線"
-            : pi?.phase === "connecting"
-            ? pi.status || "連線中…"
-            : "樹莓派未連線"}
-        </span>
-        {!piConnected && pi?.phase !== "connecting" && pi?.error && (
-          <span className="home-ble-err" title={pi.error}>
-            ⚠ {pi.error}
-          </span>
-        )}
-        {piConnected ? (
-          <button className="home-ble-btn ghost" onClick={pi.disconnect}>
-            斷線
-          </button>
-        ) : (
-          <button
-            className="home-ble-btn"
-            onClick={pi?.connect}
-            disabled={pi?.phase === "connecting"}
-          >
-            {pi?.phase === "connecting" ? "連線中…" : "連線樹莓派"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // 進入畫面：先建立個人化基準線
 function BaselineForm({ onStart }) {
   const [age, setAge] = useState(30);
@@ -300,7 +261,7 @@ export default function HeartRateMode({ onBack }) {
   const [demoOpen, setDemoOpen] = useState(false); // demo 面板是否展開
   // 只用真實資料：開啟後沒收到毫米波心率就顯示等待畫面，絕不跑模擬曲線
   const [realOnly, setRealOnly] = useState(false);
-  // data=自行車車況；vitals=統一生理量測（毫米波 hr/rr/fi，不管走樹莓派專線或單車 TX）
+  // data=自行車車況；vitals=生理量測（毫米波 hr/rr/fi，走 CAN 0x1FA15000 或同條 TX 的 JSON）
   const { data, vitals, phase, canControl, isDemo, setAssist } = useBle();
   // 引擎優先吃真實 hr/rr/fi（非 demo 且有值時）；沒有就依 realOnly 決定等待或模擬
   const { live } = useHeartRateEngine(base, demoBand, vitals, realOnly);
@@ -405,9 +366,6 @@ export default function HeartRateMode({ onBack }) {
           </div>
         )}
       </div>
-
-      {/* 樹莓派連線狀態：斷線時可就地手動重連（毫米波 hr/rr/fi 從這條來） */}
-      <PiStatusBar />
 
       {!base && <BaselineForm onStart={setBase} />}
       {/* 只用真實資料且尚未收到心率 → 圖表照常顯示，數值以「—」呈現（不跑模擬曲線） */}

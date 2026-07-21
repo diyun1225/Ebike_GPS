@@ -10,23 +10,22 @@
 // 連線本身沿用 useBleTelemetry（原本住在一般模式，邏輯完全不變，只是提到共享層）。
 import { createContext, useContext } from "react";
 import { useBleTelemetry } from "../modes/normal/useBleTelemetry.js";
-import { useVitalsBle } from "./useVitalsBle.js";
 
 const BleContext = createContext(null);
 
 export function BleProvider({ children }) {
-  const bike = useBleTelemetry(); // 第一條連線：自行車（車況 + 控制）
-  const pi = useVitalsBle(); //      第二條連線：樹莓派（hr/rr/fi 生理量測）
-  // 統一生理量測來源：毫米波 JSON 可能走「樹莓派專線」或「單車 TX 混流」進來。
-  // 優先用專線（有 hr），沒有就用單車那條解出來的。模式一律讀 ble.vitals，不用管走哪條。
-  const vitals =
-    pi.vitals && pi.vitals.hr != null ? pi.vitals : bike.vitals;
-  // 相容既有用法：ble.* 仍是自行車；樹莓派掛在 ble.pi 底下（ble.pi.connect / ble.pi.vitals）
-  return (
-    <BleContext.Provider value={{ ...bike, pi, vitals }}>
-      {children}
-    </BleContext.Provider>
-  );
+  // 只剩「一條」BLE 連線：自行車 / ESP32（車況 + 控制 + 生理量測）。
+  //
+  // 生理量測（hr/rr/fi）來源：原本手機要另外連一條樹莓派專線，現在改由
+  // ESP32 直接連毫米波，再透過這條 BLE 轉發給手機——
+  //   ・hr/rr 走 CAN 0x1FA15000（見 ccpaDecode 的 parseMmwaveVitals）
+  //   ・或走同一條 TX 混進來的 JSON（pickVitals）
+  // 兩種都併進 bike.vitals，所以模式一律讀 ble.vitals 即可。
+  //
+  // 註：ESP32 另外會把同一份資料發到 MQTT ouo/v1/vehicle/state（source:"can"），
+  //     那是給後台 / 其他消費端用的，App 不從那邊讀。
+  const bike = useBleTelemetry();
+  return <BleContext.Provider value={bike}>{children}</BleContext.Provider>;
 }
 
 export function useBle() {
