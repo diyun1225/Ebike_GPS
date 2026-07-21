@@ -357,10 +357,14 @@ export function useBleTelemetry() {
       // 曾改成由 App 直接組 raw CAN（CAN,2940015,2,02,0X）想少一層解析，
       // 但實車測試「騎起來完全沒感覺」= 車沒吃這帳。ble_phone.html 送字串則正常，
       // 所以以韌體那條路為準，不要再自己組 CAN。
-      if (!Number.isInteger(level) || level < 0 || level > 5) return;
-      setCommandedAssist(level); // 這台車不回報段位，用它當畫面回饋
-      demoAssistRef.current = level; // 模擬模式下讓 assistLevel 也跟著變
-      sendCommand("ASSIST," + level);
+      // 不做「不合法就 return」的檢查——那會靜默不送、很難查。
+      // ble_phone.html 是直接把段位接成字串送出，這裡照做，只夾到 0~5。
+      const n = Math.round(Number(level));
+      if (!Number.isFinite(n)) return;
+      const lv = Math.max(0, Math.min(5, n));
+      setCommandedAssist(lv); // 這台車不回報段位，用它當畫面回饋
+      demoAssistRef.current = lv; // 模擬模式下讓 assistLevel 也跟著變
+      sendCommand("ASSIST," + lv);
     },
     [sendCommand]
   );
